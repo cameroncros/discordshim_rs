@@ -26,7 +26,9 @@ message Presence {
 }
 
 message Settings {
-    string channel_id = 1;
+    uint64 channel_id = 1;
+
+    // Only relevant when self-hosting, global discordshim wont support presence anyway
     bool presence_enabled = 2;
     int32 cycle_time = 3;
     string command_prefix = 4;
@@ -34,7 +36,7 @@ message Settings {
 
 message Request {
     string command = 1;
-    int64 user = 2;
+    uint64 user = 2;
     ProtoFile file = 3;
 }
 
