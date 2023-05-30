@@ -1,10 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use crate::test::tests::discord_shim::{ProtoFile, Response, Settings};
+    use crate::test::tests::discord_shim::{ProtoFile, Response, Settings, TextField};
     use byteorder::{ByteOrder, LittleEndian};
     use prost::Message;
     use std::io::Write;
     use std::net::{Shutdown, TcpStream};
+
+    static CHANNEL_ID: u64 = 467700763775205396;
 
     pub mod discord_shim {
         include!(concat!(env!("OUT_DIR"), "/discord_shim.rs"));
@@ -20,22 +22,76 @@ mod tests {
         stream.write_all(msg.as_slice()).unwrap();
     }
 
+    fn get_snapshot() -> ProtoFile {
+        let mut file = ProtoFile::default();
+        file.filename = "filename.png".to_string();
+
+        let filedata;
+        match std::fs::read("test_data/test_pattern.png") {
+            Ok(bytes) => filedata = bytes,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    eprintln!("please run again with appropriate permissions.");
+                }
+                panic!("{}", e);
+            }
+        }
+        file.data = filedata;
+        return file;
+    }
+
     #[test]
-    fn it_file_upload() {
+    fn test_send_file() {
         let mut stream = TcpStream::connect("localhost:12345").unwrap();
         println!("Successfully connected to server in port 12345");
 
         let mut response = Response::default();
         let mut settings = Settings::default();
-        settings.channel_id = 467700763775205396;
+        settings.channel_id = CHANNEL_ID;
         response.settings = Some(settings);
 
         send_message(&mut stream, &mut response);
 
-        let mut file = ProtoFile::default();
-        file.filename = "filename.png".to_string();
-        file.data = Vec::from("Hello World".as_bytes());
-        response.file = Some(file);
+        let mut response = Response::default();
+        let snapshot = get_snapshot();
+        response.file = Some(snapshot);
+
+        send_message(&mut stream, &mut response);
+
+        stream.shutdown(Shutdown::Both).unwrap();
+        println!("Terminated.");
+    }
+
+    #[test]
+    fn test_send_embed() {
+        let mut stream = TcpStream::connect("localhost:12345").unwrap();
+        println!("Successfully connected to server in port 12345");
+
+        let mut response = Response::default();
+        let mut settings = Settings::default();
+        settings.channel_id = CHANNEL_ID;
+        response.settings = Some(settings);
+
+        send_message(&mut stream, &mut response);
+
+        let mut response = Response::default();
+        let mut discord_embed = discord_shim::EmbedContent::default();
+        discord_embed.title = "Title".to_string();
+        discord_embed.description = "Description".to_string();
+        discord_embed.author = "Author".to_string();
+        discord_embed.color = 0x123456;
+        let snapshot = get_snapshot();
+        discord_embed.snapshot = Some(snapshot);
+        for i in 0..50 {
+            let mut field = TextField::default();
+            field.title = i.to_string();
+            field.text = "".to_string();
+            field.inline = true;
+            discord_embed.textfield.insert(0, field);
+        }
+        response.embed = Some(discord_embed);
+
+        send_message(&mut stream, &mut response);
 
         stream.shutdown(Shutdown::Both).unwrap();
         println!("Terminated.");
