@@ -1,7 +1,7 @@
 mod server;
 mod test;
 
-use async_std::sync::Mutex;
+use async_std::sync::RwLock;
 use serenity::client::{Context, EventHandler};
 use serenity::Client;
 use std::env;
@@ -17,7 +17,7 @@ use serenity::prelude::GatewayIntents;
 use tokio::task;
 
 struct Handler {
-    server: Arc<Mutex<Server>>,
+    server: Arc<RwLock<Server>>,
 }
 
 #[async_trait]
@@ -31,7 +31,7 @@ impl EventHandler for Handler {
             return;
         }
         self.server
-            .lock()
+            .read()
             .await
             .send_command(
                 new_message.channel_id,
@@ -42,7 +42,7 @@ impl EventHandler for Handler {
         for attachment in new_message.attachments {
             let filedata = attachment.download().await.unwrap();
             self.server
-                .lock()
+                .read()
                 .await
                 .send_file(
                     new_message.channel_id,
@@ -60,8 +60,8 @@ impl EventHandler for Handler {
     }
 }
 
-async fn run_server(_ctx: Arc<Context>, server: Arc<Mutex<Server>>) {
-    server.lock().await.run(_ctx).await
+async fn run_server(_ctx: Arc<Context>, server: Arc<RwLock<Server>>) {
+    server.read().await.run(_ctx).await
 }
 
 #[tokio::main]
@@ -74,7 +74,7 @@ async fn main() {
     );
 
     let handler = Handler {
-        server: Arc::new(Mutex::new(Server::new())),
+        server: Arc::new(RwLock::new(Server::new())),
     };
 
     // Login with a bot token from the environment

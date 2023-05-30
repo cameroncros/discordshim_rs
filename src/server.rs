@@ -30,13 +30,13 @@ struct DiscordSettings {
 }
 
 pub(crate) struct Server {
-    clients: Arc<HashMap<ChannelId, Mutex<TcpStream>>>,
+    clients: Arc<Mutex<HashMap<ChannelId, Mutex<TcpStream>>>>,
 }
 
 impl Server {
     pub(crate) fn new() -> Server {
         return Server {
-            clients: Arc::new(HashMap::new()),
+            clients: Arc::new(Mutex::new(HashMap::new())),
         };
     }
 
@@ -48,10 +48,12 @@ impl Server {
             .incoming()
             .for_each_concurrent(None, |tcpstream| {
                 let ctx2 = ctx.clone();
+                let clients2 = self.clients.clone();
                 async move {
                     let tcpstream = tcpstream.unwrap();
                     let f = ctx2.clone();
-                    self.connection_loop(tcpstream, f).await.unwrap();
+                    let c = clients2.clone();
+                    self.connection_loop(tcpstream, f, c).await.unwrap();
                 }
             })
             .await;
@@ -61,6 +63,7 @@ impl Server {
         &self,
         mut stream: TcpStream,
         ctx: Arc<Context>,
+        clients: Arc<Mutex<HashMap<ChannelId, Mutex<TcpStream>>>>,
     ) -> Result<String, io::Error> {
         let mut settings = DiscordSettings {
             channel: 0,
@@ -88,7 +91,14 @@ impl Server {
             }
             let response = result.unwrap();
 
-            self.handle_task(&mut settings, response, ctx.clone()).await;
+            self.handle_task(
+                &mut settings,
+                response,
+                ctx.clone(),
+                clients.clone(),
+                stream.clone(),
+            )
+            .await;
         }
     }
 
@@ -97,6 +107,8 @@ impl Server {
         settings: &mut DiscordSettings,
         response: discord_shim::Response,
         ctx: Arc<Context>,
+        clients: Arc<Mutex<HashMap<ChannelId, Mutex<TcpStream>>>>,
+        stream: TcpStream,
     ) {
         let channel = ChannelId(settings.channel);
         if response.file.is_some() {
@@ -172,6 +184,13 @@ impl Server {
             settings.prefix = new_settings.command_prefix;
             settings.cycle_time = new_settings.cycle_time;
             settings.enabled = new_settings.presence_enabled;
+
+            if settings.channel != 0 {
+                clients
+                    .lock()
+                    .await
+                    .insert(ChannelId(settings.channel), Mutex::new(stream));
+            }
         }
     }
 
@@ -189,9 +208,10 @@ impl Server {
         let length_buf = &mut [0u8; 4];
         LittleEndian::write_u32(length_buf, length);
 
-        for client in self.clients.keys() {
+        let c = self.clients.lock().await;
+        for client in c.keys() {
             if channel.0 == client.0 {
-                let mut tcpstream = self.clients.get(client).unwrap().lock().await;
+                let mut tcpstream = c.get(client).unwrap().lock().await;
 
                 tcpstream.write_all(length_buf).await.unwrap();
                 tcpstream.write_all(&*data).await.unwrap();
