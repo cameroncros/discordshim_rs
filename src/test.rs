@@ -59,13 +59,13 @@ mod tests {
         let mut response = Response::default();
         let mut settings = Settings::default();
         settings.channel_id = CHANNEL_ID;
-        response.settings = Some(settings);
+        response.field = Some(discord_shim::response::Field::Settings(settings));
 
         send_message(&mut stream, &mut response);
 
         let mut response = Response::default();
         let snapshot = get_snapshot();
-        response.file = Some(snapshot);
+        response.field = Some(discord_shim::response::Field::File(snapshot));
 
         send_message(&mut stream, &mut response);
 
@@ -81,7 +81,7 @@ mod tests {
         let mut response = Response::default();
         let mut settings = Settings::default();
         settings.channel_id = CHANNEL_ID;
-        response.settings = Some(settings);
+        response.field = Some(discord_shim::response::Field::Settings(settings));
 
         send_message(&mut stream, &mut response);
 
@@ -100,7 +100,7 @@ mod tests {
             field.inline = true;
             discord_embed.textfield.insert(0, field);
         }
-        response.embed = Some(discord_embed);
+        response.field = Some(discord_shim::response::Field::Embed(discord_embed));
 
         send_message(&mut stream, &mut response);
 
@@ -116,27 +116,29 @@ mod tests {
         let mut response = Response::default();
         let mut settings = Settings::default();
         settings.channel_id = CHANNEL_ID;
-        response.settings = Some(settings);
+        response.field = Some(discord_shim::response::Field::Settings(settings));
 
         send_message(&mut stream, &mut response);
         let mut seen_file = false;
         let mut seen_command = false;
         loop {
             let request = recv_message(&mut stream);
-            if request.file.is_some() {
-                let file = request.file.clone().unwrap();
-                println!(
-                    "Received file: [{}], size: [{}]",
-                    file.filename,
-                    file.data.len()
-                );
-                assert_ne!(request.user, 0);
-                seen_file = true;
-            }
-            if !request.command.is_empty() {
-                println!("Received command: [{}]", request.command);
-                assert_ne!(request.user, 0);
-                seen_command = true;
+            match request.message {
+                None => {}
+                Some(discord_shim::request::Message::File(file)) => {
+                    println!(
+                        "Received file: [{}], size: [{}]",
+                        file.filename,
+                        file.data.len()
+                    );
+                    assert_ne!(request.user, 0);
+                    seen_file = true;
+                }
+                Some(discord_shim::request::Message::Command(command)) => {
+                    println!("Received command: [{}]", command);
+                    assert_ne!(request.user, 0);
+                    seen_command = true;
+                }
             }
             if seen_file && seen_command {
                 break;
