@@ -1,0 +1,8 @@
+version: '3.7'
+services:
+  discordshim:
+    image: discordshim
+    build: .
+    environment:
+      - BOT_TOKEN=NDgxMjc0NTU4MjM4OTQ5NDE1.GOg4Sf.ptkCm-QUW7cCI5gkg03SKvYPjbQDC_JbZV8umY
+    restart: always

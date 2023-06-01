@@ -66,12 +66,7 @@ async fn run_server(_ctx: Arc<Context>, server: Arc<RwLock<Server>>) {
 
 #[tokio::main]
 async fn main() {
-    let framework = StandardFramework::new().configure(|c| c.prefix("~")); // set the bot's prefix to "~"
-
-    env::set_var(
-        "DISCORD_TOKEN",
-        "NDgxMjc0NTU4MjM4OTQ5NDE1.GOg4Sf.ptkCm-QUW7cCI5gkg03SKvYPjbQDC_JbZV8umY",
-    );
+    let framework = StandardFramework::new().configure(|c| c.prefix("~"));
 
     let handler = Handler {
         server: Arc::new(RwLock::new(Server::new())),
