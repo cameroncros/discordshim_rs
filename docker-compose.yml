@@ -1,0 +1,10 @@
+version: '3.7'
+services:
+  discordshim:
+    image: discordshim
+    build: .
+    ports:
+      - "12345:12345"
+    environment:
+      - DISCORD_TOKEN=
+    restart: always
