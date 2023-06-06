@@ -41,7 +41,7 @@ impl Server {
     }
 
     pub(crate) async fn run(&self, ctx: Arc<Context>) {
-        let listener = TcpListener::bind("127.0.0.1:12345")
+        let listener = TcpListener::bind("127.0.0.1:23416")
             .await
             .expect("Failed to bind");
         listener

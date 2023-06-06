@@ -4,7 +4,7 @@ services:
     image: discordshim
     build: .
     ports:
-      - "12345:12345"
+      - "23416:23416"
     environment:
       - DISCORD_TOKEN=
     restart: always
