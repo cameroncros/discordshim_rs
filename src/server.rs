@@ -41,7 +41,8 @@ impl Server {
     }
 
     pub(crate) async fn run(&self, ctx: Arc<Context>) {
-        let listener = TcpListener::bind("127.0.0.1:23416")
+        println!("Starting TCP listener");
+        let listener = TcpListener::bind("0.0.0.0:23416")
             .await
             .expect("Failed to bind");
         listener
@@ -53,6 +54,7 @@ impl Server {
                     let f = ctx2.clone();
                     let c = clients2.clone();
                     let stream = tcpstream.unwrap();
+                    println!("Received connection from: {}", stream.peer_addr().unwrap());
 
                     let settings = Arc::new(DiscordSettings {
                         tcpstream: RwLock::new(stream.clone()),
