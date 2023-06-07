@@ -1,7 +1,11 @@
-extern crate prost_build;
+use protobuf_codegen::Codegen;
 
 fn main() {
-    prost_build::compile_protos(&["src/messages.proto"],
-                                &["src/"]).unwrap()
+    Codegen::new()
+        .pure()
+        .out_dir("src/")
+        .include("src")
+        .input("src/messages.proto")
+        .run()
+        .unwrap();
 }
-

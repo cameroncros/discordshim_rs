@@ -1,0 +1,71 @@
+# You can override the included template(s) by including variable overrides
+# SAST customization: https://docs.gitlab.com/ee/user/application_security/sast/#customizing-the-sast-settings
+# Secret Detection customization: https://docs.gitlab.com/ee/user/application_security/secret_detection/#customizing-settings
+# Dependency Scanning customization: https://docs.gitlab.com/ee/user/application_security/dependency_scanning/#customizing-the-dependency-scanning-settings
+# Container Scanning customization: https://docs.gitlab.com/ee/user/application_security/container_scanning/#customizing-the-container-scanning-settings
+# Note that environment variables can be set in several places
+# See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
+stages:
+- test
+- dev
+- live
+
+test:
+  stage: test
+  image: rust:buster
+  script:
+    - cargo test
+
+dev_deploy:
+  stage: dev
+  image: docker/compose:latest
+  script:
+    - |
+      cat <<EOT >> .env
+      BOT_TOKEN='$TEST_BOT_TOKEN'
+      EXTERNAL_PORT=53416
+      EOT
+    - COMPOSE_PROJECT_NAME=dev_discordshim docker-compose down || true
+    - COMPOSE_PROJECT_NAME=dev_discordshim docker-compose up --build -d
+
+test_dev_deploy:
+  stage: dev
+  image: python:alpine
+  timeout: 10m
+  retry: 2
+  dependencies:
+    - dev_deploy
+  script:
+    - apk add protoc
+    - python3 -m pip install -r requirements.txt
+    - BOT_TOKEN=$TEST_BOT_TOKEN CHANNEL_ID=$CHANNEL_ID DISCORDSHIM_PORT=53416 DISCORDSHIM_ADDR=192.168.1.101 python3 -m pytest
+
+live_deploy:
+  stage: live
+  image: docker/compose:latest
+  dependencies:
+    - test_dev_deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  script:
+    - |
+      cat <<EOT >> .env
+      BOT_TOKEN='$LIVE_BOT_TOKEN'
+      EXTERNAL_PORT=23416
+      EOT
+    - COMPOSE_PROJECT_NAME=prod_discordshim docker-compose down || true
+    - COMPOSE_PROJECT_NAME=prod_discordshim docker-compose up --build -d
+
+test_live_deploy:
+  stage: live
+  image: python:alpine
+  timeout: 10m
+  retry: 2
+  dependencies:
+    - live_deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  script:
+    - apk add protoc
+    - python3 -m pip install -r requirements.txt
+    - BOT_TOKEN=$TEST_BOT_TOKEN CHANNEL_ID=$CHANNEL_ID DISCORDSHIM_PORT=23416 python3 -m pytest

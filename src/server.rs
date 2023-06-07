@@ -1,24 +1,20 @@
-use crate::server::discord_shim::{ProtoFile, Response};
+use crate::embedbuilder::{build_embeds, split_file};
+use crate::messages;
 use async_std::io::{ReadExt, WriteExt};
 use async_std::net::TcpListener;
 use async_std::net::TcpStream;
 use async_std::sync::{Mutex, RwLock};
 use byteorder::{ByteOrder, LittleEndian};
 use futures::stream::StreamExt;
-use prost::Message;
-
+use log::{debug, error, info};
+use protobuf::Message;
 use serenity::client::Context;
 use serenity::model::id::{ChannelId, UserId};
 use serenity::model::prelude::OnlineStatus;
 use serenity::model::prelude::{Activity, AttachmentType};
 use std::borrow::Cow;
 use std::io;
-use std::io::Cursor;
 use std::sync::Arc;
-
-pub mod discord_shim {
-    include!(concat!(env!("OUT_DIR"), "/discord_shim.rs"));
-}
 
 struct DiscordSettings {
     tcpstream: RwLock<TcpStream>,
@@ -41,7 +37,7 @@ impl Server {
     }
 
     pub(crate) async fn run(&self, ctx: Arc<Context>) {
-        println!("Starting TCP listener");
+        debug!("Starting TCP listener");
         let listener = TcpListener::bind("0.0.0.0:23416")
             .await
             .expect("Failed to bind");
@@ -54,7 +50,7 @@ impl Server {
                     let f = ctx2.clone();
                     let c = clients2.clone();
                     let stream = tcpstream.unwrap();
-                    println!("Received connection from: {}", stream.peer_addr().unwrap());
+                    info!("Received connection from: {}", stream.peer_addr().unwrap());
 
                     let settings = Arc::new(DiscordSettings {
                         tcpstream: RwLock::new(stream.clone()),
@@ -63,15 +59,13 @@ impl Server {
                         cycle_time: Mutex::new(0),
                         enabled: Mutex::new(false),
                     });
-                    let settings2 = settings.clone();
-                    let settings3 = settings.clone();
 
-                    c.lock().await.insert(0, settings);
+                    c.lock().await.insert(0, settings.clone());
 
-                    let loop_res = self.connection_loop(stream, settings2, f).await;
+                    let loop_res = self.connection_loop(stream, settings.clone(), f).await;
                     c.lock()
                         .await
-                        .retain(|item| !Arc::<DiscordSettings>::ptr_eq(&item, &settings3));
+                        .retain(|item| !Arc::<DiscordSettings>::ptr_eq(&item, &settings));
 
                     loop_res.expect("Loop failed");
                 }
@@ -92,88 +86,104 @@ impl Server {
                 Err(message) => return Ok(message.to_string()),
             }
             let length = LittleEndian::read_u32(length_buf) as usize;
+            debug!("Incoming response, {length} bytes long.");
 
             let mut buf = vec![0u8; length];
             match stream.read_exact(&mut buf).await {
                 Ok(_) => {}
                 Err(message) => return Ok(message.to_string()),
             }
+            debug!("Read bytes, parsing");
 
-            let result = Response::decode(&mut Cursor::new(buf));
+            let result = messages::Response::parse_from_bytes(buf.as_slice());
             if result.is_err() {
                 return Ok("Failed to decode message".to_string());
             }
             let response = result.unwrap();
 
-            self.handle_task(settings.clone(), response, ctx.clone())
+            debug!("Parsed successfully");
+            let result = self
+                .handle_task(settings.clone(), response, ctx.clone())
                 .await;
+            if result.is_err() {
+                return Ok("Failed to send response".to_string());
+            }
+            debug!("Handled successfully");
         }
     }
 
     async fn handle_task(
         &self,
         settings: Arc<DiscordSettings>,
-        response: discord_shim::Response,
+        response: messages::Response,
         ctx: Arc<Context>,
-    ) {
+    ) -> Result<(), ()> {
         match response.field {
-            None => {}
-            Some(discord_shim::response::Field::File(protofile)) => {
+            None => {
+                return Ok(());
+            }
+            Some(messages::response::Field::File(protofile)) => {
                 let filename = protofile.filename.clone();
                 let filedata = protofile.data.as_slice();
-                let files = vec![AttachmentType::Bytes {
-                    data: Cow::from(filedata),
-                    filename: filename.clone(),
-                }];
-
-                settings
-                    .channel
-                    .read()
-                    .await
-                    .send_files(&ctx, files, |m| m.content(filename))
-                    .await
-                    .unwrap();
+                let files = split_file(filename, filedata);
+                for file in files {
+                    let result = settings
+                        .channel
+                        .read()
+                        .await
+                        .send_files(&ctx, vec![file.1], |m| m.content(file.0))
+                        .await;
+                    if result.is_err() {
+                        let error = result.err().unwrap();
+                        error!("{error}");
+                        return Err(());
+                    }
+                }
+                return Ok(());
             }
 
-            Some(discord_shim::response::Field::Embed(response_embed)) => {
-                let embeds = self._subdivide_embeds(response_embed);
+            Some(messages::response::Field::Embed(response_embed)) => {
+                let embeds = build_embeds(response_embed);
                 for e in embeds {
                     if e.snapshot.is_some() {
                         let snapshot = e.snapshot.clone().unwrap();
-                        let filename = format!("{}", snapshot.filename);
-                        let filename2 = format!("attachment://{}", snapshot.filename);
+                        let filename_url = format!("attachment://{}", snapshot.filename);
                         let filedata = snapshot.data.as_slice();
                         let files = vec![AttachmentType::Bytes {
                             data: Cow::from(filedata),
-                            filename: filename.clone(),
+                            filename: snapshot.filename,
                         }];
-                        settings
+                        let result = settings
                             .channel
                             .read()
                             .await
                             .send_files(&ctx, files, |m| {
                                 m.embed(|f| {
-                                    f.title(e.title.clone())
+                                    f.title(e.title)
                                         .description(e.description)
                                         .color(e.color)
                                         .author(|a| a.name(e.author));
                                     for field in e.textfield {
                                         f.field(field.title, field.text, field.inline);
                                     }
-                                    f.image(filename2.clone());
+                                    f.image(filename_url.clone());
                                     f
                                 })
                             })
-                            .await
-                            .unwrap();
+                            .await;
+                        if result.is_err() {
+                            let error = result.err().unwrap();
+                            error!("{error}");
+                            return Err(());
+                        }
                     } else {
-                        settings
+                        let result = settings
                             .channel
                             .read()
                             .await
                             .send_message(&ctx, |m| {
                                 m.embed(|f| {
-                                    f.title(e.title.clone())
+                                    f.title(e.title)
                                         .description(e.description)
                                         .color(e.color)
                                         .author(|a| a.name(e.author));
@@ -183,31 +193,38 @@ impl Server {
                                     f
                                 })
                             })
-                            .await
-                            .unwrap();
+                            .await;
+                        if result.is_err() {
+                            let error = result.err().unwrap();
+                            error!("{error}");
+                            return Err(());
+                        }
                     }
                 }
+                return Ok(());
             }
 
-            Some(discord_shim::response::Field::Presence(presence)) => {
+            Some(messages::response::Field::Presence(presence)) => {
                 let activity = Activity::playing(presence.presence);
                 ctx.shard.set_presence(Some(activity), OnlineStatus::Online);
+                return Ok(());
             }
 
-            Some(discord_shim::response::Field::Settings(new_settings)) => {
+            Some(messages::response::Field::Settings(new_settings)) => {
                 *settings.channel.write().await = ChannelId(new_settings.channel_id);
                 *settings.prefix.lock().await = new_settings.command_prefix;
                 *settings.cycle_time.lock().await = new_settings.cycle_time;
                 *settings.enabled.lock().await = new_settings.presence_enabled;
+                return Ok(());
             }
         }
     }
 
     pub(crate) async fn send_command(&self, channel: ChannelId, user: UserId, command: String) {
-        let mut request = discord_shim::Request::default();
+        let mut request = messages::Request::default();
         request.user = user.0;
-        request.message = Some(discord_shim::request::Message::Command(command));
-        let data = request.encode_to_vec();
+        request.message = Some(messages::request::Message::Command(command));
+        let data = request.write_to_bytes().unwrap();
 
         self._send_data(channel, data).await
     }
@@ -240,45 +257,14 @@ impl Server {
         filename: String,
         file: Vec<u8>,
     ) {
-        let mut request = discord_shim::Request::default();
+        let mut request = messages::Request::default();
         request.user = user.0;
-        let mut req_file = ProtoFile::default();
+        let mut req_file = messages::ProtoFile::default();
         req_file.data = file;
         req_file.filename = filename;
-        request.message = Some(discord_shim::request::Message::File(req_file));
-        let data = request.encode_to_vec();
+        request.message = Some(messages::request::Message::File(req_file));
+        let data = request.write_to_bytes().unwrap();
 
         self._send_data(channel, data).await
-    }
-
-    fn _subdivide_embeds(
-        &self,
-        embed_content: discord_shim::EmbedContent,
-    ) -> Vec<discord_shim::EmbedContent> {
-        let mut embeds = vec![];
-        let mut first = discord_shim::EmbedContent::default();
-        first.title = embed_content.title;
-        first.description = embed_content.description;
-        first.snapshot = embed_content.snapshot;
-
-        first.author = embed_content.author.clone();
-        first.color = embed_content.color;
-
-        let mut last = first;
-
-        for field in embed_content.textfield {
-            if last.textfield.len() >= 25 {
-                embeds.push(last);
-                last = discord_shim::EmbedContent::default();
-                last.author = embed_content.author.clone();
-                last.color = embed_content.color;
-            }
-
-            last.textfield.push(field.clone());
-        }
-
-        embeds.push(last);
-
-        return embeds;
     }
 }

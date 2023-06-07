@@ -1,0 +1,111 @@
+use crate::messages;
+use crate::messages::TextField;
+use serenity::model::channel::AttachmentType;
+use std::borrow::Cow;
+use std::io::{Cursor, Write};
+
+pub const ONE_MEGABYTE: usize = 1 * 1024 * 1024;
+pub const DISCORD_MAX_ATTACHMENT_SIZE: usize = 5 * ONE_MEGABYTE;
+
+pub const DISCORD_MAX_TITLE: usize = 256;
+pub const DISCORD_MAX_DESCRIPTION: usize = 4096;
+pub const DISCORD_MAX_FIELDS: usize = 25;
+pub const DISCORD_MAX_VALUE: usize = 1024;
+//pub const DISCORD_MAX_FOOTER: usize = 2048;
+pub const DISCORD_MAX_AUTHOR: usize = 256;
+pub const DISCORD_MAX_EMBED_TOTAL: usize = 6000;
+
+fn truncate(string: String, length: usize) -> String {
+    if string.len() > length {
+        return string[0..length].to_string();
+    }
+    return string;
+}
+
+pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<messages::EmbedContent> {
+    let mut embeds = vec![];
+    let mut first = messages::EmbedContent::default();
+    let mut total_chars;
+    first.title = truncate(embed_content.title, DISCORD_MAX_TITLE);
+    first.description = if !embed_content.description.is_empty() {
+        truncate(embed_content.description, DISCORD_MAX_DESCRIPTION)
+    } else {
+        "\u{200b}".to_string()
+    };
+    first.snapshot = embed_content.snapshot;
+
+    let author = truncate(embed_content.author, DISCORD_MAX_AUTHOR);
+    first.author = author.clone();
+    first.color = embed_content.color;
+
+    total_chars = first.title.len() + first.description.len() + first.author.len();
+
+    let mut last = first;
+
+    for field in embed_content.textfield {
+        let mut trimmed_field = TextField::default();
+        let title = truncate(field.title, DISCORD_MAX_TITLE);
+        let text = truncate(field.text, DISCORD_MAX_VALUE);
+
+        trimmed_field.title = title.clone();
+        trimmed_field.text = text.clone();
+        trimmed_field.inline = field.inline;
+
+        let next_size = total_chars + trimmed_field.title.len() + trimmed_field.text.len();
+        if last.textfield.len() >= DISCORD_MAX_FIELDS || next_size > DISCORD_MAX_EMBED_TOTAL {
+            embeds.push(last);
+            last = messages::EmbedContent::default();
+            last.description = "\u{200b}".to_string();
+            last.author = author.clone();
+            last.color = embed_content.color.clone();
+            total_chars = last.title.len() + last.description.len() + last.author.len();
+        }
+
+        last.textfield.push(trimmed_field);
+        total_chars += title.len() + text.len();
+    }
+
+    embeds.push(last);
+    embeds
+}
+
+pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, AttachmentType)> {
+    return if filedata.len() < DISCORD_MAX_ATTACHMENT_SIZE {
+        let mut attachments = vec![];
+        let filename2 = filename.clone();
+        attachments.push((
+            filename,
+            AttachmentType::Bytes {
+                data: Cow::from(filedata),
+                filename: filename2,
+            },
+        ));
+        attachments
+    } else {
+        let mut attachments = vec![];
+        let bytes = Vec::new();
+        let zipfile = Cursor::new(bytes);
+        let mut zip = zip::ZipWriter::new(zipfile);
+        zip.start_file(filename.clone(), Default::default())
+            .unwrap();
+        zip.write_all(filedata).unwrap();
+        let zipdata = zip.finish().unwrap().into_inner();
+
+        let mut i = 0;
+        let chunks = zipdata.chunks(ONE_MEGABYTE);
+        for chunk in chunks {
+            let zipfilename = format!("{}.zip.{:0>3}", filename, i);
+            let mut data = vec![0u8; chunk.len()];
+            data.copy_from_slice(chunk);
+            attachments.push((
+                zipfilename.clone(),
+                AttachmentType::Bytes {
+                    data: Cow::from(data),
+                    filename: zipfilename,
+                },
+            ));
+            i += 1;
+        }
+        attachments
+    };
+}

@@ -1,19 +1,21 @@
 #[cfg(test)]
 mod tests {
-    use crate::test::tests::discord_shim::{ProtoFile, Response, Settings, TextField};
+    use crate::embedbuilder::{
+        build_embeds, split_file, DISCORD_MAX_AUTHOR, DISCORD_MAX_DESCRIPTION, DISCORD_MAX_FIELDS,
+        DISCORD_MAX_TITLE, DISCORD_MAX_VALUE, ONE_MEGABYTE,
+    };
+    use crate::messages;
+    use crate::messages::{EmbedContent, Response, Settings, TextField};
     use byteorder::{ByteOrder, LittleEndian};
-    use prost::Message;
+    use protobuf::{Message, MessageField};
+    use std::fs::File;
     use std::io::{Read, Write};
     use std::net::{Shutdown, TcpStream};
 
     static CHANNEL_ID: u64 = 467700763775205396;
 
-    pub mod discord_shim {
-        include!(concat!(env!("OUT_DIR"), "/discord_shim.rs"));
-    }
-
     fn send_message(stream: &mut TcpStream, response: &mut Response) {
-        let msg = response.encode_to_vec();
+        let msg = response.write_to_bytes().unwrap();
         let length = msg.len() as u32;
         let length_buf = &mut [0u8; 4];
         LittleEndian::write_u32(length_buf, length);
@@ -22,7 +24,7 @@ mod tests {
         stream.write_all(msg.as_slice()).unwrap();
     }
 
-    fn recv_message(stream: &mut TcpStream) -> discord_shim::Request {
+    fn recv_message(stream: &mut TcpStream) -> messages::Request {
         let length_buf = &mut [0u8; 4];
         stream.read_exact(length_buf).unwrap();
         let length = LittleEndian::read_u32(length_buf);
@@ -30,11 +32,11 @@ mod tests {
         let mut buf = vec![0u8; length as usize];
         stream.read_exact(&mut buf).unwrap();
 
-        return discord_shim::Request::decode(buf.as_slice()).unwrap();
+        return messages::Request::parse_from_bytes(buf.as_slice()).unwrap();
     }
 
-    fn get_snapshot() -> ProtoFile {
-        let mut file = ProtoFile::default();
+    fn get_snapshot() -> messages::ProtoFile {
+        let mut file = messages::ProtoFile::default();
         file.filename = "filename.png".to_string();
 
         let filedata;
@@ -51,6 +53,7 @@ mod tests {
         return file;
     }
 
+    #[ignore]
     #[test]
     fn test_send_file() {
         let mut stream = TcpStream::connect("localhost:12345").unwrap();
@@ -59,13 +62,13 @@ mod tests {
         let mut response = Response::default();
         let mut settings = Settings::default();
         settings.channel_id = CHANNEL_ID;
-        response.field = Some(discord_shim::response::Field::Settings(settings));
+        response.field = Some(messages::response::Field::Settings(settings));
 
         send_message(&mut stream, &mut response);
 
         let mut response = Response::default();
         let snapshot = get_snapshot();
-        response.field = Some(discord_shim::response::Field::File(snapshot));
+        response.field = Some(messages::response::Field::File(snapshot));
 
         send_message(&mut stream, &mut response);
 
@@ -73,6 +76,7 @@ mod tests {
         println!("Terminated.");
     }
 
+    #[ignore]
     #[test]
     fn test_send_embed() {
         let mut stream = TcpStream::connect("localhost:12345").unwrap();
@@ -81,18 +85,18 @@ mod tests {
         let mut response = Response::default();
         let mut settings = Settings::default();
         settings.channel_id = CHANNEL_ID;
-        response.field = Some(discord_shim::response::Field::Settings(settings));
+        response.field = Some(messages::response::Field::Settings(settings));
 
         send_message(&mut stream, &mut response);
 
         let mut response = Response::default();
-        let mut discord_embed = discord_shim::EmbedContent::default();
+        let mut discord_embed = messages::EmbedContent::default();
         discord_embed.title = "Title".to_string();
         discord_embed.description = "Description".to_string();
         discord_embed.author = "Author".to_string();
         discord_embed.color = 0x123456;
         let snapshot = get_snapshot();
-        discord_embed.snapshot = Some(snapshot);
+        discord_embed.snapshot = MessageField::some(snapshot);
         for i in 0..50 {
             let mut field = TextField::default();
             field.title = i.to_string();
@@ -100,7 +104,7 @@ mod tests {
             field.inline = true;
             discord_embed.textfield.insert(0, field);
         }
-        response.field = Some(discord_shim::response::Field::Embed(discord_embed));
+        response.field = Some(messages::response::Field::Embed(discord_embed));
 
         send_message(&mut stream, &mut response);
 
@@ -108,6 +112,7 @@ mod tests {
         println!("Terminated.");
     }
 
+    #[ignore]
     #[test]
     fn test_recv_message() {
         let mut stream = TcpStream::connect("localhost:12345").unwrap();
@@ -116,7 +121,7 @@ mod tests {
         let mut response = Response::default();
         let mut settings = Settings::default();
         settings.channel_id = CHANNEL_ID;
-        response.field = Some(discord_shim::response::Field::Settings(settings));
+        response.field = Some(messages::response::Field::Settings(settings));
 
         send_message(&mut stream, &mut response);
         let mut seen_file = false;
@@ -125,7 +130,7 @@ mod tests {
             let request = recv_message(&mut stream);
             match request.message {
                 None => {}
-                Some(discord_shim::request::Message::File(file)) => {
+                Some(messages::request::Message::File(file)) => {
                     println!(
                         "Received file: [{}], size: [{}]",
                         file.filename,
@@ -134,7 +139,7 @@ mod tests {
                     assert_ne!(request.user, 0);
                     seen_file = true;
                 }
-                Some(discord_shim::request::Message::Command(command)) => {
+                Some(messages::request::Message::Command(command)) => {
                     println!("Received command: [{}]", command);
                     assert_ne!(request.user, 0);
                     seen_command = true;
@@ -144,5 +149,88 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[test]
+    fn test_split_file_small_file() {
+        let attachments = split_file("filename".to_string(), "filedata".as_bytes());
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].0, "filename");
+    }
+
+    #[test]
+    fn test_split_file_large_file() {
+        let mut file = File::open("/dev/urandom").unwrap();
+        let mut filedata = vec![0u8; 7 * ONE_MEGABYTE];
+        file.read_exact(&mut filedata).unwrap();
+        let attachments = split_file("filename".to_string(), &filedata);
+        assert_eq!(attachments.len(), 8);
+        assert_eq!(attachments[0].0, "filename.zip.000");
+        assert_eq!(attachments[1].0, "filename.zip.001");
+        assert_eq!(attachments[2].0, "filename.zip.002");
+        assert_eq!(attachments[3].0, "filename.zip.003");
+        assert_eq!(attachments[4].0, "filename.zip.004");
+        assert_eq!(attachments[5].0, "filename.zip.005");
+        assert_eq!(attachments[6].0, "filename.zip.006");
+        assert_eq!(attachments[7].0, "filename.zip.007");
+    }
+
+    #[test]
+    fn test_build_embeds_min() {
+        let mut textfields = vec![];
+        textfields.push(TextField {
+            title: str::repeat("d", DISCORD_MAX_TITLE),
+            text: str::repeat("e", DISCORD_MAX_VALUE),
+            inline: false,
+            special_fields: Default::default(),
+        });
+        let ec = EmbedContent {
+            title: str::repeat("a", DISCORD_MAX_TITLE),
+            description: str::repeat("b", DISCORD_MAX_DESCRIPTION),
+            author: str::repeat("c", DISCORD_MAX_AUTHOR),
+            color: 0,
+            snapshot: Default::default(),
+            textfield: textfields,
+            special_fields: Default::default(),
+        };
+
+        let embeds = build_embeds(ec);
+        assert_eq!(1, embeds.len());
+    }
+
+    #[test]
+    fn test_build_embeds_max() {
+        let mut textfields = vec![];
+        for _i in 0..(DISCORD_MAX_FIELDS + 1) {
+            textfields.push(TextField {
+                title: str::repeat("d", DISCORD_MAX_TITLE),
+                text: str::repeat("e", DISCORD_MAX_VALUE),
+                inline: false,
+                special_fields: Default::default(),
+            });
+        }
+        let ec = EmbedContent {
+            title: str::repeat("a", DISCORD_MAX_TITLE),
+            description: str::repeat("b", DISCORD_MAX_DESCRIPTION),
+            author: str::repeat("c", DISCORD_MAX_AUTHOR),
+            color: 0,
+            snapshot: Default::default(),
+            textfield: textfields,
+            special_fields: Default::default(),
+        };
+
+        let embeds = build_embeds(ec.clone());
+        assert_eq!(8, embeds.len());
+
+        assert_eq!(ec.title, embeds[0].title);
+        assert_eq!(ec.description, embeds[0].description);
+        let mut num_fields = embeds[0].textfield.len();
+        for i in 1..8 {
+            assert_eq!("", embeds[i].title);
+            assert_eq!("\u{200b}", embeds[i].description);
+            num_fields += embeds[i].textfield.len();
+        }
+
+        assert_eq!(num_fields, DISCORD_MAX_FIELDS + 1);
     }
 }

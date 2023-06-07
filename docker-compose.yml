@@ -4,7 +4,9 @@ services:
     image: discordshim
     build: .
     ports:
-      - "23416:23416"
+      - "${EXTERNAL_PORT}:23416"
     environment:
-      - DISCORD_TOKEN=
+      - DISCORD_TOKEN=${BOT_TOKEN}
+      - RUST_LOG=debug,tracing::span=off
+      - RUST_BACKTRACE=full
     restart: always

@@ -1,7 +1,10 @@
+mod embedbuilder;
+mod messages;
 mod server;
 mod test;
 
 use async_std::sync::RwLock;
+use log::error;
 use serenity::client::{Context, EventHandler};
 use serenity::Client;
 use std::env;
@@ -66,6 +69,8 @@ async fn run_server(_ctx: Arc<Context>, server: Arc<RwLock<Server>>) {
 
 #[tokio::main]
 async fn main() {
+    pretty_env_logger::init();
+
     let framework = StandardFramework::new().configure(|c| c.prefix("~"));
 
     let handler = Handler {
@@ -83,6 +88,6 @@ async fn main() {
 
     // start listening for events by starting a single shard
     if let Err(why) = client.start().await {
-        println!("An error occurred while running the client: {:?}", why);
+        error!("An error occurred while running the client: {:?}", why);
     }
 }
