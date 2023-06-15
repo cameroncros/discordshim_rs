@@ -9,4 +9,5 @@ services:
       - DISCORD_TOKEN=${BOT_TOKEN}
       - RUST_LOG=debug,tracing::span=off
       - RUST_BACKTRACE=full
+      - CLOUD_SERVER=true  # Delete env variable if self-hosting, will enable presence.
     restart: always
