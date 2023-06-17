@@ -266,18 +266,23 @@ impl Server {
 
         let c = self.clients.lock().await;
 
+        let mut found = 0;
         for client in c.as_slice() {
             if channel.0 != 0 && channel.0 == client.channel.read().await.0 {
                 let mut tcpstream = client.tcpstream.write().await;
 
                 if tcpstream.write_all(length_buf).await.is_err() {
+                    error!("Failed to send length");
                     continue;
                 }
                 if tcpstream.write_all(&*data).await.is_err() {
+                    error!("Failed to send message");
                     continue;
                 }
+                found += 1;
             }
         }
+        info!("Sent message to {found} clients");
     }
 
     pub(crate) async fn send_file(
