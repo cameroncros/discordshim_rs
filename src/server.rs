@@ -81,6 +81,19 @@ impl Server {
                         .await
                         .retain(|item| !Arc::<DiscordSettings>::ptr_eq(&item, &settings));
 
+                    if cloud.is_ok() {
+                        let presence = format!("to {} instances", c.lock().await.len());
+                        ctx2.clone()
+                            .set_presence(
+                                Option::Some(Activity::streaming(
+                                    presence,
+                                    "https://octoprint.org",
+                                )),
+                                OnlineStatus::Online,
+                            )
+                            .await;
+                    }
+
                     loop_res.expect("Loop failed");
                 }
             })
