@@ -7,7 +7,7 @@ services:
       - "${EXTERNAL_PORT}:23416"
     environment:
       - DISCORD_TOKEN=${BOT_TOKEN}
-      - RUST_LOG=off,discordshim=info,serenity=error
+      - RUST_LOG=error,discordshim=info
       - RUST_BACKTRACE=full
       - CLOUD_SERVER=true  # Delete env variable if self-hosting, will enable presence.
     restart: always
