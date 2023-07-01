@@ -69,7 +69,7 @@ async fn run_server(_ctx: Arc<Context>, server: Arc<RwLock<Server>>) {
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    pretty_env_logger::init_timed();
 
     let framework = StandardFramework::new().configure(|c| c.prefix("~"));
 

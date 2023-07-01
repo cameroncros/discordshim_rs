@@ -50,7 +50,8 @@ impl Server {
                     let f = ctx2.clone();
                     let c = clients2.clone();
                     let stream = tcpstream.unwrap();
-                    info!("Received connection from: {}", stream.peer_addr().unwrap());
+                    let peer_addr = stream.peer_addr().unwrap().clone();
+                    info!("Received connection from: {}", peer_addr);
 
                     let settings = Arc::new(DiscordSettings {
                         tcpstream: RwLock::new(stream.clone()),
@@ -95,6 +96,7 @@ impl Server {
                     }
 
                     loop_res.expect("Loop failed");
+                    info!("Received connection from: {}", peer_addr);
                 }
             })
             .await;
