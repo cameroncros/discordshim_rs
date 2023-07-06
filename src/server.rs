@@ -77,7 +77,7 @@ impl Server {
                             .await;
                     }
 
-                    let loop_res = self.connection_loop(stream, settings.clone(), f).await;
+                    let _loop_res = self.connection_loop(stream, settings.clone(), f).await;
                     c.lock()
                         .await
                         .retain(|item| !Arc::<DiscordSettings>::ptr_eq(&item, &settings));
@@ -95,8 +95,7 @@ impl Server {
                             .await;
                     }
 
-                    loop_res.expect("Loop failed");
-                    info!("Received connection from: {}", peer_addr);
+                    info!("Dropped connection from: {}", peer_addr);
                 }
             })
             .await;
@@ -107,12 +106,15 @@ impl Server {
         mut stream: TcpStream,
         settings: Arc<DiscordSettings>,
         ctx: Arc<Context>,
-    ) -> Result<String, io::Error> {
+    ) {
         loop {
             let length_buf = &mut [0u8; 4];
             match stream.read_exact(length_buf).await {
                 Ok(_) => {}
-                Err(message) => return Ok(message.to_string()),
+                Err(message) => {
+                    debug!("Read length failed with [{message}]");
+                    return;
+                }
             }
             let length = LittleEndian::read_u32(length_buf) as usize;
             debug!("Incoming response, {length} bytes long.");
@@ -120,24 +122,29 @@ impl Server {
             let mut buf = vec![0u8; length];
             match stream.read_exact(&mut buf).await {
                 Ok(_) => {}
-                Err(message) => return Ok(message.to_string()),
+                Err(message) => {
+                    debug!("Read data failed with [{message}]");
+                    return;
+                }
             }
-            debug!("Read bytes, parsing");
 
             let result = messages::Response::parse_from_bytes(buf.as_slice());
             if result.is_err() {
-                return Ok("Failed to decode message".to_string());
+                debug!(
+                    "Parse data failed with [{}]",
+                    result.err().unwrap().to_string()
+                );
+                return;
             }
             let response = result.unwrap();
 
-            debug!("Parsed successfully");
             let result = self
                 .handle_task(settings.clone(), response, ctx.clone())
                 .await;
             if result.is_err() {
-                return Ok("Failed to send response".to_string());
+                debug!("Failed to send response");
+                return;
             }
-            debug!("Handled successfully");
         }
     }
 
