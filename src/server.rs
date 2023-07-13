@@ -13,8 +13,8 @@ use serenity::model::id::{ChannelId, UserId};
 use serenity::model::prelude::OnlineStatus;
 use serenity::model::prelude::{Activity, AttachmentType};
 use std::borrow::Cow;
+use std::env;
 use std::sync::Arc;
-use std::{env, io};
 
 struct DiscordSettings {
     tcpstream: RwLock<TcpStream>,

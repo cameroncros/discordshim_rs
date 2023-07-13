@@ -19,4 +19,5 @@ RUN cargo build --release --bin discordshim
 FROM debian:bullseye-slim AS runtime
 WORKDIR app
 COPY --from=builder /app/target/release/discordshim /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/discordshim"]
+ENTRYPOINT ["/usr/local/bin/discordshim", "serve"]
+HEALTHCHECK CMD netstat -an | grep 23416 > /dev/null; if [ 0 != $? ]; then exit 1; fi;
