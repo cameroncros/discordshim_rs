@@ -1,2 +1,4 @@
 Python tests for test_discordshim.TestDiscordShim.run.xml
 Run discordshim.run.xml
+Run healthcheck.run.xml
+docker-compose.yml_ Compose Deployment.run.xml

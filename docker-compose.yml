@@ -7,7 +7,14 @@ services:
       - "${EXTERNAL_PORT}:23416"
     environment:
       - DISCORD_TOKEN=${BOT_TOKEN}
+      - HEALTH_CHECK_CHANNEL_ID=1128486273699565661
       - RUST_LOG=error,discordshim=debug
       - RUST_BACKTRACE=full
       - CLOUD_SERVER=true  # Delete env variable if self-hosting, will enable presence.
     restart: always
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/discordshim", "healthcheck"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 30s

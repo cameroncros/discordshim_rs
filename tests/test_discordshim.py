@@ -116,9 +116,9 @@ class TestDiscordShim(LiveDiscordTestCase):
         self.client.sendall(data)
 
         results = self.stop_scraper(waitformessages=8)
-        self.assertEquals('a' * MAX_TITLE, results[0].embeds[0].title)
-        self.assertEquals('b' * MAX_DESCRIPTION, results[0].embeds[0].description)
-        self.assertEquals('c' * MAX_AUTHOR, results[0].embeds[0].author.name)
+        self.assertEqual('a' * MAX_TITLE, results[0].embeds[0].title)
+        self.assertEqual('b' * MAX_DESCRIPTION, results[0].embeds[0].description)
+        self.assertEqual('c' * MAX_AUTHOR, results[0].embeds[0].author.name)
 
     def test_unicode_embed(self):
         self.start_scraper()
@@ -137,8 +137,8 @@ class TestDiscordShim(LiveDiscordTestCase):
         self.client.sendall(data)
 
         results = self.stop_scraper(waitformessages=1)
-        self.assertEquals(teststr, results[0].embeds[0].title)
-        self.assertEquals(teststr, results[0].embeds[0].description)
-        self.assertEquals(teststr, results[0].embeds[0].author.name)
-        self.assertEquals(teststr, results[0].embeds[0].fields[0].name)
-        self.assertEquals(teststr, results[0].embeds[0].fields[0].value)
+        self.assertEqual(teststr, results[0].embeds[0].title)
+        self.assertEqual(teststr, results[0].embeds[0].description)
+        self.assertEqual(teststr, results[0].embeds[0].author.name)
+        self.assertEqual(teststr, results[0].embeds[0].fields[0].name)
+        self.assertEqual(teststr, results[0].embeds[0].fields[0].value)
