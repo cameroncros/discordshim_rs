@@ -15,6 +15,7 @@ use serenity::model::prelude::{Activity, AttachmentType};
 use std::borrow::Cow;
 use std::env;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 struct DiscordSettings {
     tcpstream: RwLock<TcpStream>,
@@ -27,12 +28,14 @@ struct DiscordSettings {
 
 pub(crate) struct Server {
     clients: Arc<Mutex<Vec<Arc<DiscordSettings>>>>,
+    last_presense_update: Mutex<SystemTime>,
 }
 
 impl Server {
     pub(crate) fn new() -> Server {
         return Server {
             clients: Arc::new(Mutex::new(Vec::new())),
+            last_presense_update: Mutex::new(SystemTime::UNIX_EPOCH),
         };
     }
 
@@ -63,42 +66,41 @@ impl Server {
 
                     c.lock().await.insert(0, settings.clone());
 
-                    let cloud = env::var("CLOUD_SERVER");
-                    if cloud.is_ok() {
-                        let presence = format!("to {} instances", c.lock().await.len());
-                        ctx2.clone()
-                            .set_presence(
-                                Option::Some(Activity::streaming(
-                                    presence,
-                                    "https://octoprint.org",
-                                )),
-                                OnlineStatus::Online,
-                            )
-                            .await;
-                    }
+                    let num_servers = c.lock().await.len();
+                    self.update_presence(ctx2.clone(), num_servers).await;
 
                     let _loop_res = self.connection_loop(stream, settings.clone(), f).await;
                     c.lock()
                         .await
                         .retain(|item| !Arc::<DiscordSettings>::ptr_eq(&item, &settings));
 
-                    if cloud.is_ok() {
-                        let presence = format!("to {} instances", c.lock().await.len());
-                        ctx2.clone()
-                            .set_presence(
-                                Option::Some(Activity::streaming(
-                                    presence,
-                                    "https://octoprint.org",
-                                )),
-                                OnlineStatus::Online,
-                            )
-                            .await;
-                    }
+                    let num_servers = c.lock().await.len();
+                    self.update_presence(ctx2.clone(), num_servers).await;
 
                     info!("Dropped connection from: {}", peer_addr);
                 }
             })
             .await;
+    }
+
+    async fn update_presence(&self, ctx: Arc<Context>, num_servers: usize) {
+        let mut last_update = self.last_presense_update.lock().await;
+        let now = SystemTime::now();
+        if now.duration_since(*last_update).unwrap().as_secs() < 60 {
+            return;
+        }
+
+        let cloud = env::var("CLOUD_SERVER");
+        if cloud.is_ok() {
+            let presence = format!("to {} instances", num_servers);
+            ctx.set_presence(
+                Some(Activity::streaming(presence, "https://octoprint.org")),
+                OnlineStatus::Online,
+            )
+            .await;
+        }
+
+        *last_update = now;
     }
 
     async fn connection_loop(
