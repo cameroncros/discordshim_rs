@@ -44,6 +44,16 @@ class TestDiscordShim(LiveDiscordTestCase):
 
         self.stop_scraper(waitformessages=1)
 
+    def test_send_embed_mention(self):
+        self.start_scraper()
+
+        response = Response(embed=EmbedContent(title="", description="<@481274558238949415>"))
+        data = response.SerializeToString()
+        self.client.sendall(len(data).to_bytes(4, byteorder='little'))
+        self.client.sendall(data)
+
+        self.stop_scraper(waitformessages=1)
+
     def test_send_complete_embed(self):
         self.start_scraper()
 
