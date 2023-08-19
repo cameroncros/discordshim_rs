@@ -1,5 +1,6 @@
 use crate::embedbuilder::{build_embeds, split_file};
 use crate::messages;
+use crate::messages::EmbedContent;
 use async_std::io::{ReadExt, WriteExt};
 use async_std::net::TcpListener;
 use async_std::net::TcpStream;
@@ -8,6 +9,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use futures::stream::StreamExt;
 use log::{debug, error, info};
 use protobuf::Message;
+use regex::Regex;
 use serenity::client::Context;
 use serenity::model::id::{ChannelId, UserId};
 use serenity::model::prelude::OnlineStatus;
@@ -15,7 +17,7 @@ use serenity::model::prelude::{Activity, AttachmentType};
 use std::borrow::Cow;
 use std::env;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 struct DiscordSettings {
     tcpstream: RwLock<TcpStream>,
@@ -183,6 +185,8 @@ impl Server {
             Some(messages::response::Field::Embed(response_embed)) => {
                 let embeds = build_embeds(response_embed);
                 for e in embeds {
+                    let mentions = extract_mentions(&e);
+
                     if e.snapshot.is_some() {
                         let snapshot = e.snapshot.clone().unwrap();
                         let filename_url = format!("attachment://{}", snapshot.filename);
@@ -207,6 +211,7 @@ impl Server {
                                     f.image(filename_url.clone());
                                     f
                                 })
+                                .content(mentions)
                             })
                             .await;
                         if result.is_err() {
@@ -230,6 +235,7 @@ impl Server {
                                     }
                                     f
                                 })
+                                .content(mentions)
                             })
                             .await;
                         if result.is_err() {
@@ -312,5 +318,49 @@ impl Server {
         let data = request.write_to_bytes().unwrap();
 
         self._send_data(channel, data).await
+    }
+}
+
+fn extract_mentions(e: &EmbedContent) -> String {
+    let mut mentions = String::new();
+    let re = Regex::new(r"(<@[0-9a-zA-Z]*>)").unwrap();
+    for (_, [mention]) in re.captures_iter(e.title.as_str()).map(|c| c.extract()) {
+        mentions = mentions + mention + " ";
+    }
+    for (_, [mention]) in re
+        .captures_iter(e.description.as_str())
+        .map(|c| c.extract())
+    {
+        mentions = mentions + mention + " ";
+    }
+    mentions
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::messages::EmbedContent;
+    use crate::server::extract_mentions;
+
+    #[test]
+    fn test_extract_mentions_empty() {
+        let e = EmbedContent::new();
+        let mentions = extract_mentions(&e);
+        assert_eq!("", mentions);
+    }
+
+    #[test]
+    fn test_extract_mentions_title() {
+        let mut e = EmbedContent::new();
+        e.title = "<@12345678910> <@Everyone>".to_string();
+        let mentions = extract_mentions(&e);
+        assert_eq!("<@12345678910> <@Everyone> ", mentions);
+    }
+
+    #[test]
+    fn test_extract_mentions_description() {
+        let mut e = EmbedContent::new();
+        e.description = "<@12345678910> <@Everyone>".to_string();
+        let mentions = extract_mentions(&e);
+        assert_eq!("<@12345678910> <@Everyone> ", mentions);
     }
 }
