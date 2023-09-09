@@ -6,6 +6,7 @@ use async_std::net::TcpListener;
 use async_std::net::TcpStream;
 use async_std::sync::{Mutex, RwLock};
 use byteorder::{ByteOrder, LittleEndian};
+use csv::Writer;
 use futures::stream::StreamExt;
 use log::{debug, error, info};
 use protobuf::Message;
@@ -19,6 +20,13 @@ use std::env;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+#[derive(serde::Serialize)]
+struct Stats {
+    ip: String,
+    num_messages: u64,
+    total_data: u64,
+}
+
 struct DiscordSettings {
     tcpstream: RwLock<TcpStream>,
     channel: RwLock<ChannelId>,
@@ -26,6 +34,25 @@ struct DiscordSettings {
     prefix: Mutex<String>,
     cycle_time: Mutex<i32>,
     enabled: Mutex<bool>,
+    num_messages: Mutex<u64>,
+    total_data: Mutex<u64>,
+}
+
+impl DiscordSettings {
+    async fn get_stats(&self) -> Stats {
+        Stats {
+            ip: self
+                .tcpstream
+                .read()
+                .await
+                .peer_addr()
+                .unwrap()
+                .to_string()
+                .clone(),
+            num_messages: *self.num_messages.lock().await,
+            total_data: *self.total_data.lock().await,
+        }
+    }
 }
 
 pub(crate) struct Server {
@@ -64,6 +91,8 @@ impl Server {
                         prefix: Mutex::new("".to_string()),
                         cycle_time: Mutex::new(0),
                         enabled: Mutex::new(false),
+                        num_messages: Mutex::new(0),
+                        total_data: Mutex::new(0),
                     });
 
                     c.lock().await.insert(0, settings.clone());
@@ -158,6 +187,8 @@ impl Server {
         response: messages::Response,
         ctx: Arc<Context>,
     ) -> Result<(), ()> {
+        *settings.num_messages.lock().await += 1;
+        *settings.total_data.lock().await += response.compute_size();
         match response.field {
             None => {
                 return Ok(());
@@ -318,6 +349,25 @@ impl Server {
         let data = request.write_to_bytes().unwrap();
 
         self._send_data(channel, data).await
+    }
+
+    pub(crate) async fn send_stats(&self, channel: ChannelId, ctx: Context) {
+        let mut wtr = Writer::from_writer(vec![]);
+        let c = self.clients.lock().await;
+        for client in c.as_slice() {
+            wtr.serialize(client.get_stats().await).unwrap();
+        }
+        wtr.flush().unwrap();
+
+        let files = vec![AttachmentType::Bytes {
+            data: Cow::from(wtr.into_inner().unwrap()),
+            filename: String::from("stats.csv"),
+        }];
+        let result = channel.send_files(&ctx, files, |m| m).await;
+        if result.is_err() {
+            let error = result.err().unwrap();
+            error!("{error}");
+        }
     }
 }
 
