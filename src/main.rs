@@ -31,9 +31,19 @@ struct Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, new_message: Message) {
-        println!("{}", new_message.content);
+        // Check for statistics messages
+        if new_message.channel_id == self.healthcheckchannel {
+            if new_message.content == "/stats" {
+                self.server
+                    .read()
+                    .await
+                    .send_stats(new_message.channel_id, ctx.clone())
+                    .await;
+            }
+        }
+
+        // Check for health check message.
         if new_message.is_own(ctx.cache) {
-            // Check for health check message.
             if new_message.channel_id == self.healthcheckchannel {
                 if new_message.embeds.len() != 1 {
                     return;
@@ -52,9 +62,11 @@ impl EventHandler for Handler {
             }
             return;
         }
+
         if new_message.is_private() {
             return;
         }
+        // Process all other messages as normal.
         self.server
             .read()
             .await
