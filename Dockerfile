@@ -16,8 +16,8 @@ COPY . .
 RUN cargo build --release --bin discordshim
 
 # We do not need the Rust toolchain to run the binary!
-FROM debian:bullseye-slim AS runtime
+FROM ubuntu:latest AS runtime
 WORKDIR app
-COPY --from=builder /app/target/release/discordshim /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/discordshim", "serve"]
+COPY --from=builder /app/target/release/discordshim /usr/bin
+ENTRYPOINT ["/usr/bin/discordshim", "serve"]
 HEALTHCHECK CMD netstat -an | grep 23416 > /dev/null; if [ 0 != $? ]; then exit 1; fi;
