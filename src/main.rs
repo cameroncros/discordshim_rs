@@ -32,14 +32,12 @@ struct Handler {
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, new_message: Message) {
         // Check for statistics messages
-        if new_message.channel_id == self.healthcheckchannel {
-            if new_message.content == "/stats" {
-                self.server
-                    .read()
-                    .await
-                    .send_stats(new_message.channel_id, ctx.clone())
-                    .await;
-            }
+        if new_message.channel_id == self.healthcheckchannel && new_message.content == "/stats" {
+            self.server
+                .read()
+                .await
+                .send_stats(new_message.channel_id, ctx.clone())
+                .await;
         }
 
         // Check for health check message.
@@ -48,7 +46,7 @@ impl EventHandler for Handler {
                 if new_message.embeds.len() != 1 {
                     return;
                 }
-                let embed1 = new_message.embeds.get(0).unwrap();
+                let embed1 = new_message.embeds.first().unwrap();
                 if embed1.title.is_none() {
                     return;
                 }
@@ -145,5 +143,5 @@ async fn serve() -> i32 {
         error!("An error occurred while running the client: {:?}", why);
         return -1;
     }
-    return 0;
+    0
 }

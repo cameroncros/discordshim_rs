@@ -62,10 +62,10 @@ pub(crate) struct Server {
 
 impl Server {
     pub(crate) fn new() -> Server {
-        return Server {
+        Server {
             clients: Arc::new(Mutex::new(Vec::new())),
             last_presense_update: Mutex::new(SystemTime::UNIX_EPOCH),
-        };
+        }
     }
 
     pub(crate) async fn run(&self, ctx: Arc<Context>) {
@@ -82,7 +82,7 @@ impl Server {
                     let f = ctx2.clone();
                     let c = clients2.clone();
                     let stream = tcpstream.unwrap();
-                    let peer_addr = stream.peer_addr().unwrap().clone();
+                    let peer_addr = stream.peer_addr().unwrap();
                     info!("Received connection from: {}", peer_addr);
 
                     let settings = Arc::new(DiscordSettings {
@@ -103,7 +103,7 @@ impl Server {
                     let _loop_res = self.connection_loop(stream, settings.clone(), f).await;
                     c.lock()
                         .await
-                        .retain(|item| !Arc::<DiscordSettings>::ptr_eq(&item, &settings));
+                        .retain(|item| !Arc::<DiscordSettings>::ptr_eq(item, &settings));
 
                     let num_servers = c.lock().await.len();
                     self.update_presence(ctx2.clone(), num_servers).await;
@@ -190,9 +190,7 @@ impl Server {
         *settings.num_messages.lock().await += 1;
         *settings.total_data.lock().await += response.compute_size();
         match response.field {
-            None => {
-                return Ok(());
-            }
+            None => Ok(()),
             Some(messages::response::Field::File(protofile)) => {
                 let filename = protofile.filename.clone();
                 let filedata = protofile.data.as_slice();
@@ -210,7 +208,7 @@ impl Server {
                         return Err(());
                     }
                 }
-                return Ok(());
+                Ok(())
             }
 
             Some(messages::response::Field::Embed(response_embed)) => {
@@ -276,7 +274,7 @@ impl Server {
                         }
                     }
                 }
-                return Ok(());
+                Ok(())
             }
 
             Some(messages::response::Field::Presence(presence)) => {
@@ -285,7 +283,7 @@ impl Server {
                     let activity = Activity::playing(presence.presence);
                     ctx.shard.set_presence(Some(activity), OnlineStatus::Online);
                 }
-                return Ok(());
+                Ok(())
             }
 
             Some(messages::response::Field::Settings(new_settings)) => {
@@ -293,7 +291,7 @@ impl Server {
                 *settings.prefix.lock().await = new_settings.command_prefix;
                 *settings.cycle_time.lock().await = new_settings.cycle_time;
                 *settings.enabled.lock().await = new_settings.presence_enabled;
-                return Ok(());
+                Ok(())
             }
         }
     }
@@ -323,7 +321,7 @@ impl Server {
                     error!("Failed to send length");
                     continue;
                 }
-                if tcpstream.write_all(&*data).await.is_err() {
+                if tcpstream.write_all(&data).await.is_err() {
                     error!("Failed to send message");
                     continue;
                 }
@@ -340,12 +338,18 @@ impl Server {
         filename: String,
         file: Vec<u8>,
     ) {
-        let mut request = messages::Request::default();
-        request.user = user.0;
-        let mut req_file = messages::ProtoFile::default();
-        req_file.data = file;
-        req_file.filename = filename;
-        request.message = Some(messages::request::Message::File(req_file));
+        let req_file = messages::ProtoFile {
+            data: file,
+            filename,
+            ..Default::default()
+        };
+
+        let request = messages::Request {
+            user: user.0,
+            message: Some(messages::request::Message::File(req_file)),
+            ..Default::default()
+        };
+
         let data = request.write_to_bytes().unwrap();
 
         self._send_data(channel, data).await

@@ -8,7 +8,7 @@ use std::env;
 
 pub async fn healthcheck() -> i32 {
     let mut client = TcpStream::connect("127.0.0.1:23416").await.unwrap();
-    let channelid: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
+    let channel_id: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
         .expect("channel id")
         .parse()
         .unwrap();
@@ -17,8 +17,11 @@ pub async fn healthcheck() -> i32 {
     // Send settings
     {
         let mut response = messages::Response::new();
-        let mut settings = messages::Settings::default();
-        settings.channel_id = channelid;
+        let mut settings = messages::Settings {
+            channel_id,
+            ..Default::default()
+        };
+        settings.channel_id = channel_id;
         response.set_settings(settings);
 
         let bytes = response.write_to_bytes().unwrap();
@@ -27,8 +30,10 @@ pub async fn healthcheck() -> i32 {
     // Send flag
     {
         let mut response = messages::Response::new();
-        let mut message = messages::EmbedContent::default();
-        message.title = flag.clone();
+        let message = messages::EmbedContent {
+            title: flag.clone(),
+            ..Default::default()
+        };
         response.set_embed(message);
 
         let bytes = response.write_to_bytes().unwrap();
@@ -49,7 +54,7 @@ pub async fn healthcheck() -> i32 {
             return 0; // Success
         }
     }
-    return -1;
+    -1
 }
 
 async fn send_data(tcpstream: &mut TcpStream, data: Vec<u8>) {
@@ -58,5 +63,5 @@ async fn send_data(tcpstream: &mut TcpStream, data: Vec<u8>) {
     LittleEndian::write_u32(length_buf, length);
 
     tcpstream.write_all(length_buf).await.unwrap();
-    tcpstream.write_all(&*data).await.unwrap();
+    tcpstream.write_all(&data).await.unwrap();
 }

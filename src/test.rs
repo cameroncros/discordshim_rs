@@ -36,21 +36,22 @@ mod tests {
     }
 
     fn get_snapshot() -> messages::ProtoFile {
-        let mut file = messages::ProtoFile::default();
-        file.filename = "filename.png".to_string();
+        let mut file = messages::ProtoFile {
+            filename: "filename.png".to_string(),
+            ..Default::default()
+        };
 
-        let filedata;
-        match std::fs::read("test_data/test_pattern.png") {
-            Ok(bytes) => filedata = bytes,
+        let filedata = match std::fs::read("test_data/test_pattern.png") {
+            Ok(bytes) => bytes,
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::PermissionDenied {
                     eprintln!("please run again with appropriate permissions.");
                 }
                 panic!("{}", e);
             }
-        }
+        };
         file.data = filedata;
-        return file;
+        file
     }
 
     #[ignore]
@@ -59,10 +60,14 @@ mod tests {
         let mut stream = TcpStream::connect("localhost:12345").unwrap();
         println!("Successfully connected to server in port 12345");
 
-        let mut response = Response::default();
-        let mut settings = Settings::default();
-        settings.channel_id = CHANNEL_ID;
-        response.field = Some(messages::response::Field::Settings(settings));
+        let settings = Settings {
+            channel_id: CHANNEL_ID,
+            ..Default::default()
+        };
+        let mut response = Response {
+            field: Some(messages::response::Field::Settings(settings)),
+            ..Default::default()
+        };
 
         send_message(&mut stream, &mut response);
 
@@ -82,26 +87,34 @@ mod tests {
         let mut stream = TcpStream::connect("localhost:12345").unwrap();
         println!("Successfully connected to server in port 12345");
 
-        let mut response = Response::default();
-        let mut settings = Settings::default();
-        settings.channel_id = CHANNEL_ID;
-        response.field = Some(messages::response::Field::Settings(settings));
+        let settings = Settings {
+            channel_id: CHANNEL_ID,
+            ..Default::default()
+        };
+        let mut response = Response {
+            field: Some(messages::response::Field::Settings(settings)),
+            ..Default::default()
+        };
 
         send_message(&mut stream, &mut response);
 
         let mut response = Response::default();
-        let mut discord_embed = messages::EmbedContent::default();
-        discord_embed.title = "Title".to_string();
-        discord_embed.description = "Description".to_string();
-        discord_embed.author = "Author".to_string();
-        discord_embed.color = 0x123456;
+        let mut discord_embed = messages::EmbedContent {
+            title: "Title".to_string(),
+            description: "Description".to_string(),
+            author: "Author".to_string(),
+            color: 0x123456,
+            ..Default::default()
+        };
         let snapshot = get_snapshot();
         discord_embed.snapshot = MessageField::some(snapshot);
         for i in 0..50 {
-            let mut field = TextField::default();
-            field.title = i.to_string();
-            field.text = "".to_string();
-            field.inline = true;
+            let field = TextField {
+                title: i.to_string(),
+                text: "".to_string(),
+                inline: true,
+                ..Default::default()
+            };
             discord_embed.textfield.insert(0, field);
         }
         response.field = Some(messages::response::Field::Embed(discord_embed));
@@ -118,10 +131,14 @@ mod tests {
         let mut stream = TcpStream::connect("localhost:12345").unwrap();
         println!("Successfully connected to server in port 12345");
 
-        let mut response = Response::default();
-        let mut settings = Settings::default();
-        settings.channel_id = CHANNEL_ID;
-        response.field = Some(messages::response::Field::Settings(settings));
+        let settings = Settings {
+            channel_id: CHANNEL_ID,
+            ..Default::default()
+        };
+        let mut response = Response {
+            field: Some(messages::response::Field::Settings(settings)),
+            ..Default::default()
+        };
 
         send_message(&mut stream, &mut response);
         let mut seen_file = false;
@@ -177,13 +194,12 @@ mod tests {
 
     #[test]
     fn test_build_embeds_min() {
-        let mut textfields = vec![];
-        textfields.push(TextField {
+        let textfields = vec![TextField {
             title: str::repeat("d", DISCORD_MAX_TITLE),
             text: str::repeat("e", DISCORD_MAX_VALUE),
             inline: false,
             special_fields: Default::default(),
-        });
+        }];
         let ec = EmbedContent {
             title: str::repeat("a", DISCORD_MAX_TITLE),
             description: str::repeat("b", DISCORD_MAX_DESCRIPTION),
@@ -225,10 +241,10 @@ mod tests {
         assert_eq!(ec.title, embeds[0].title);
         assert_eq!(ec.description, embeds[0].description);
         let mut num_fields = embeds[0].textfield.len();
-        for i in 1..8 {
-            assert_eq!("", embeds[i].title);
-            assert_eq!("\u{200b}", embeds[i].description);
-            num_fields += embeds[i].textfield.len();
+        for embed in embeds.iter().take(8).skip(1) {
+            assert_eq!("", embed.title);
+            assert_eq!("\u{200b}", embed.description);
+            num_fields += embed.textfield.len();
         }
 
         assert_eq!(num_fields, DISCORD_MAX_FIELDS + 1);
