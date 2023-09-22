@@ -32,6 +32,16 @@ EOT
 docker-compose up --build -d
 ```
 
+If you are on an ARMv7 pi, that may not work, try:
+
+```shell
+cat <<EOT >> .env
+BOT_TOKEN='$LIVE_BOT_TOKEN'
+EXTERNAL_PORT=23416
+EOT
+docker-compose -f docker-compose-armv7.yml up --build -d
+```
+
 ## Development
 
 ### CI
