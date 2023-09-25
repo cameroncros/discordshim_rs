@@ -7,6 +7,7 @@
 # See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
 stages:
 - test
+- build
 - dev
 - live
 
@@ -39,6 +40,23 @@ test_dev_deploy:
     - apk add protoc
     - python3 -m pip install -r requirements.txt
     - BOT_TOKEN=$TEST_BOT_TOKEN CHANNEL_ID=$CHANNEL_ID DISCORDSHIM_PORT=53416 DISCORDSHIM_ADDR=192.168.1.101 python3 -m pytest
+
+build:
+  stage: build
+  image: docker
+  parallel:
+    matrix:
+      - PLATFORM: 'linux/amd64'
+        DOCKERFILE: Dockerfile
+      - PLATFORM: 'linux/arm64'
+        DOCKERFILE: Dockerfile
+      - PLATFORM: 'linux/arm/v7'
+        DOCKERFILE: Dockerfile.armv7
+  script:
+    - docker login -u cameroncros -p $DOCKERHUB_TOKEN
+    - docker buildx inspect --bootstrap
+    - docker buildx build --platform=$PLATFORM -f $DOCKERFILE . -t cameroncros/discordshim_rs:latest
+    - docker push cameroncros/discordshim_rs:latest
 
 live_deploy:
   stage: live
