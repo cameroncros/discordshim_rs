@@ -1,8 +1,7 @@
 version: '3.3'
 services:
   discordshim:
-    image: discordshim
-    build: .
+    image: cameroncros/discordshim_rs:latest
     ports:
       - "${EXTERNAL_PORT}:23416"
     environment:
@@ -17,4 +16,3 @@ services:
       interval: 5m
       timeout: 10s
       retries: 3
-      #start_period: 30s

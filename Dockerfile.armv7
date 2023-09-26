@@ -1,12 +1,16 @@
-FROM rust AS builder
+FROM --platform=$BUILDPLATFORM rust AS builder
 WORKDIR app
 # Build application
 COPY . .
-RUN cargo build --release --bin discordshim
+RUN apt update && apt install -y gcc-arm-linux-gnueabihf
+RUN rustup target add armv7-unknown-linux-gnueabihf
+RUN cargo build --target=armv7-unknown-linux-gnueabihf --release --bin discordshim
+RUN file /app/target/armv7-unknown-linux-gnueabihf/release/discordshim
 
 # We do not need the Rust toolchain to run the binary!
-FROM ubuntu:latest AS runtime
+FROM --platform=linux/arm/v7 ubuntu:latest AS runtime
 WORKDIR app
-COPY --from=builder /app/target/release/discordshim /usr/bin
+COPY --from=builder /app/target/armv7-unknown-linux-gnueabihf/release/discordshim /usr/bin
+RUN apt update && apt install -y file gdb strace
 ENTRYPOINT ["/usr/bin/discordshim", "serve"]
 HEALTHCHECK CMD netstat -an | grep 23416 > /dev/null; if [ 0 != $? ]; then exit 1; fi;

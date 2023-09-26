@@ -1,10 +1,7 @@
 version: '3.3'
 services:
   discordshim:
-    image: discordshim
-    build:
-      context: .
-      dockerfile: Dockerfile.armv7
+    image: cameroncros/discordshim_rs:latest-armv7
     ports:
       - "${EXTERNAL_PORT}:23416"
     environment:

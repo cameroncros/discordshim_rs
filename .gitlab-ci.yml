@@ -44,19 +44,22 @@ test_dev_deploy:
 build:
   stage: build
   image: docker
+#  rules:
+#    - if: $CI_COMMIT_BRANCH == "main"
   parallel:
     matrix:
       - PLATFORM: 'linux/amd64'
         DOCKERFILE: Dockerfile
-      - PLATFORM: 'linux/arm64'
-        DOCKERFILE: Dockerfile
+        TAG: latest
       - PLATFORM: 'linux/arm/v7'
         DOCKERFILE: Dockerfile.armv7
+        TAG: latest-armv7
   script:
-    - docker login -u cameroncros -p $DOCKERHUB_TOKEN
+    - docker run --privileged --rm tonistiigi/binfmt --install all
     - docker buildx inspect --bootstrap
-    - docker buildx build --platform=$PLATFORM -f $DOCKERFILE . -t cameroncros/discordshim_rs:latest
-    - docker push cameroncros/discordshim_rs:latest
+    - docker buildx build --platform $PLATFORM -f $DOCKERFILE . -t cameroncros/discordshim_rs:$TAG
+    - docker login -u cameroncros -p $DOCKERHUB_TOKEN
+    - docker push cameroncros/discordshim_rs:$TAG
 
 live_deploy:
   stage: live

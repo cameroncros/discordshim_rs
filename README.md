@@ -22,6 +22,8 @@ Separating the Discord and Octoprint parts of the plugin was the solution chosen
 
 ## Installation
 
+### Self Built
+
 Fastest way to setup the bot is to use the Docker Compose scripts.
 
 ```shell
@@ -32,14 +34,35 @@ EOT
 docker-compose up --build -d
 ```
 
-If you are on an ARMv7 pi, that may not work, try:
+### Pre-built
+
+If that doesn't work, your platform may not be supported for building the docker container.
+Instead, use the prebuilt image with:
 
 ```shell
 cat <<EOT >> .env
 BOT_TOKEN='$LIVE_BOT_TOKEN'
 EXTERNAL_PORT=23416
 EOT
-docker-compose -f docker-compose-armv7.yml up --build -d
+docker-compose -f docker-compose-prebuilt.yml up -d
+```
+
+### Raspian/OctoPi
+
+If you want to deploy to OctoPi, first you will need to install docker:
+
+```shell
+sudo apt update && sudo apt install docker.io
+sudo systemctl enable --now docker
+```
+
+And then deploy with:
+```shell
+cat <<EOT >> .env
+BOT_TOKEN='$LIVE_BOT_TOKEN'
+EXTERNAL_PORT=23416
+EOT
+docker-compose -f docker-compose-prebuilt-armv7.yml up -d
 ```
 
 ## Development
