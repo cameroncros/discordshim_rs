@@ -13,7 +13,7 @@ services:
       - CLOUD_SERVER=true  # Delete env variable if self-hosting, will enable presence.
     restart: always
     healthcheck:
-      test: ["CMD", "/usr/local/bin/discordshim", "healthcheck"]
+      test: ["CMD", "/usr/bin/discordshim", "healthcheck"]
       interval: 5m
       timeout: 10s
       retries: 3
