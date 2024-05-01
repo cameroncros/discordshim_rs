@@ -41,6 +41,7 @@ test_dev_deploy:
     - BOT_TOKEN=$TEST_BOT_TOKEN CHANNEL_ID=$CHANNEL_ID DISCORDSHIM_PORT=53416 DISCORDSHIM_ADDR=192.168.1.101 python3 -m pytest
 
 live_deploy:
+  tags: [prod]
   stage: live
   image: docker/compose:latest
   dependencies:
@@ -57,6 +58,7 @@ live_deploy:
     - COMPOSE_PROJECT_NAME=prod_discordshim docker-compose up --build -d
 
 test_live_deploy:
+  tags: [prod]
   stage: live
   image: python:alpine
   timeout: 10m
