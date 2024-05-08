@@ -14,6 +14,7 @@ test:
   stage: test
   image: rust:buster
   script:
+    - apt update && apt install -y cmake
     - cargo test
 
 dev_deploy:
@@ -38,7 +39,7 @@ test_dev_deploy:
   script:
     - apk add protoc
     - python3 -m pip install -r requirements.txt
-    - BOT_TOKEN=$TEST_BOT_TOKEN CHANNEL_ID=$CHANNEL_ID DISCORDSHIM_PORT=53416 DISCORDSHIM_ADDR=192.168.1.101 python3 -m pytest
+    - BOT_TOKEN=$TEST_BOT_TOKEN CHANNEL_ID=$CHANNEL_ID DISCORDSHIM_PORT=53416 DISCORDSHIM_ADDR=192.168.1.100 python3 -m pytest
 
 live_deploy:
   tags: [prod]
