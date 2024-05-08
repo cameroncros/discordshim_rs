@@ -11,10 +11,11 @@ use serenity::Client;
 use std::env;
 use std::process::exit;
 use std::sync::Arc;
+use serenity::all::standard::Configuration;
+use serenity::all::StandardFramework;
 
 use crate::server::Server;
 use serenity::async_trait;
-use serenity::framework::standard::StandardFramework;
 
 use crate::healthcheck::healthcheck;
 use serenity::model::channel::Message;
@@ -120,14 +121,15 @@ async fn main() {
 }
 
 async fn serve() -> i32 {
-    let framework = StandardFramework::new().configure(|c| c.prefix("~"));
+    let framework = StandardFramework::new();
+    framework.configure(Configuration::new().prefix("~"));
     let channelid: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
         .expect("channel id")
         .parse()
         .unwrap();
 
     let handler = Handler {
-        healthcheckchannel: ChannelId(channelid),
+        healthcheckchannel: ChannelId::from(channelid),
         server: Arc::new(RwLock::new(Server::new())),
     };
 

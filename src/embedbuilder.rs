@@ -1,8 +1,12 @@
-use crate::messages;
-use crate::messages::TextField;
-use serenity::model::channel::AttachmentType;
 use std::borrow::Cow;
 use std::io::{Cursor, Write};
+
+use serenity::all::CreateAttachment;
+use serenity::model::channel::AttachmentType;
+use zip::write::SimpleFileOptions;
+
+use crate::messages;
+use crate::messages::TextField;
 
 pub const ONE_MEGABYTE: usize = 1 * 1024 * 1024;
 pub const DISCORD_MAX_ATTACHMENT_SIZE: usize = 5 * ONE_MEGABYTE;
@@ -75,10 +79,10 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Atta
         let filename2 = filename.clone();
         attachments.push((
             filename,
-            AttachmentType::Bytes {
-                data: Cow::from(filedata),
-                filename: filename2,
-            },
+            CreateAttachment::bytes(
+                Cow::from(filedata),
+                filename2,
+            )
         ));
         attachments
     } else {
@@ -86,7 +90,8 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Atta
         let bytes = Vec::new();
         let zipfile = Cursor::new(bytes);
         let mut zip = zip::ZipWriter::new(zipfile);
-        zip.start_file(filename.clone(), Default::default())
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);        
+        zip.start_file(filename.clone(), options)
             .unwrap();
         zip.write_all(filedata).unwrap();
         let zipdata = zip.finish().unwrap().into_inner();
@@ -99,10 +104,10 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Atta
             data.copy_from_slice(chunk);
             attachments.push((
                 zipfilename.clone(),
-                AttachmentType::Bytes {
-                    data: Cow::from(data),
-                    filename: zipfilename,
-                },
+                CreateAttachment::bytes(
+                    Cow::from(data),
+                    zipfilename
+                )
             ));
             i += 1;
         }

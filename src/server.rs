@@ -14,11 +14,11 @@ use regex::Regex;
 use serenity::client::Context;
 use serenity::model::id::{ChannelId, UserId};
 use serenity::model::prelude::OnlineStatus;
-use serenity::model::prelude::{Activity, AttachmentType};
 use std::borrow::Cow;
 use std::env;
 use std::sync::Arc;
 use std::time::SystemTime;
+use serenity::all::{ActivityData, CreateAttachment, CreateEmbed, CreateEmbedAuthor, CreateMessage};
 
 #[derive(serde::Serialize)]
 struct Stats {
@@ -87,7 +87,7 @@ impl Server {
 
                     let settings = Arc::new(DiscordSettings {
                         tcpstream: RwLock::new(stream.clone()),
-                        channel: RwLock::new(ChannelId(0)),
+                        channel: RwLock::new(ChannelId::from(0)),
                         prefix: Mutex::new("".to_string()),
                         cycle_time: Mutex::new(0),
                         enabled: Mutex::new(false),
@@ -125,10 +125,9 @@ impl Server {
         if cloud.is_ok() {
             let presence = format!("to {} instances", num_servers);
             ctx.set_presence(
-                Some(Activity::streaming(presence, "https://octoprint.org")),
+                Some(ActivityData::streaming(presence, "https://octoprint.org").unwrap()),
                 OnlineStatus::Online,
-            )
-            .await;
+            );
         }
 
         *last_update = now;
@@ -198,11 +197,13 @@ impl Server {
                 let filedata = protofile.data.as_slice();
                 let files = split_file(filename, filedata);
                 for file in files {
+                    let filename = file.1.filename.clone();
+                    let file_builder = CreateMessage::new().add_file(CreateAttachment::bytes(file.0, filename));
                     let result = settings
                         .channel
                         .read()
                         .await
-                        .send_files(&ctx, vec![file.1], |m| m.content(file.0))
+                        .send_files(&ctx, vec![file.1], file_builder)
                         .await;
                     if result.is_err() {
                         let error = result.err().unwrap();
@@ -218,62 +219,36 @@ impl Server {
                 for e in embeds {
                     let mentions = extract_mentions(&e);
 
+                    let mut files = vec![];
+
+                    let mut embed = CreateEmbed::new().title(e.title)
+                        .description(e.description)
+                        .color(e.color)
+                        .author(CreateEmbedAuthor::new(e.author));
+                    for field in e.textfield {
+                        embed = embed.field(field.title, field.text, field.inline);
+                    }
                     if e.snapshot.is_some() {
                         let snapshot = e.snapshot.clone().unwrap();
                         let filename_url = format!("attachment://{}", snapshot.filename);
                         let filedata = snapshot.data.as_slice();
-                        let files = vec![AttachmentType::Bytes {
-                            data: Cow::from(filedata),
-                            filename: snapshot.filename,
-                        }];
-                        let result = settings
-                            .channel
-                            .read()
-                            .await
-                            .send_files(&ctx, files, |m| {
-                                m.embed(|f| {
-                                    f.title(e.title)
-                                        .description(e.description)
-                                        .color(e.color)
-                                        .author(|a| a.name(e.author));
-                                    for field in e.textfield {
-                                        f.field(field.title, field.text, field.inline);
-                                    }
-                                    f.image(filename_url.clone());
-                                    f
-                                })
-                                .content(mentions)
-                            })
-                            .await;
-                        if result.is_err() {
-                            let error = result.err().unwrap();
-                            error!("{error}");
-                            return Err(());
-                        }
-                    } else {
-                        let result = settings
-                            .channel
-                            .read()
-                            .await
-                            .send_message(&ctx, |m| {
-                                m.embed(|f| {
-                                    f.title(e.title)
-                                        .description(e.description)
-                                        .color(e.color)
-                                        .author(|a| a.name(e.author));
-                                    for field in e.textfield {
-                                        f.field(field.title, field.text, field.inline);
-                                    }
-                                    f
-                                })
-                                .content(mentions)
-                            })
-                            .await;
-                        if result.is_err() {
-                            let error = result.err().unwrap();
-                            error!("{error}");
-                            return Err(());
-                        }
+                        files.push(CreateAttachment::bytes(
+                            Cow::from(filedata),
+                            snapshot.filename,
+                        ));
+                        embed = embed.image(filename_url.clone());
+                    }
+
+                    let message = CreateMessage::new().embed(embed).content(mentions);
+                    let result = settings
+                        .channel
+                        .read()
+                        .await
+                        .send_files(&ctx, files, message).await;
+                    if result.is_err() {
+                        let error = result.err().unwrap();
+                        error!("{error}");
+                        return Err(());
                     }
                 }
                 return Ok(());
@@ -282,14 +257,14 @@ impl Server {
             Some(messages::response::Field::Presence(presence)) => {
                 let cloud = env::var("CLOUD_SERVER");
                 if cloud.is_err() {
-                    let activity = Activity::playing(presence.presence);
+                    let activity = ActivityData::playing(presence.presence);
                     ctx.shard.set_presence(Some(activity), OnlineStatus::Online);
                 }
                 return Ok(());
             }
 
             Some(messages::response::Field::Settings(new_settings)) => {
-                *settings.channel.write().await = ChannelId(new_settings.channel_id);
+                *settings.channel.write().await = ChannelId::from(new_settings.channel_id);
                 *settings.prefix.lock().await = new_settings.command_prefix;
                 *settings.cycle_time.lock().await = new_settings.cycle_time;
                 *settings.enabled.lock().await = new_settings.presence_enabled;
@@ -300,7 +275,7 @@ impl Server {
 
     pub(crate) async fn send_command(&self, channel: ChannelId, user: UserId, command: String) {
         let mut request = messages::Request::default();
-        request.user = user.0;
+        request.user = user.get();
         request.message = Some(messages::request::Message::Command(command));
         let data = request.write_to_bytes().unwrap();
 
@@ -316,7 +291,7 @@ impl Server {
 
         let mut found = 0;
         for client in c.as_slice() {
-            if channel.0 != 0 && channel.0 == client.channel.read().await.0 {
+            if channel.get() != 0 && channel.get() == client.channel.read().await.get() {
                 let mut tcpstream = client.tcpstream.write().await;
 
                 if tcpstream.write_all(length_buf).await.is_err() {
@@ -341,7 +316,7 @@ impl Server {
         file: Vec<u8>,
     ) {
         let mut request = messages::Request::default();
-        request.user = user.0;
+        request.user = user.get();
         let mut req_file = messages::ProtoFile::default();
         req_file.data = file;
         req_file.filename = filename;
@@ -359,11 +334,11 @@ impl Server {
         }
         wtr.flush().unwrap();
 
-        let files = vec![AttachmentType::Bytes {
-            data: Cow::from(wtr.into_inner().unwrap()),
-            filename: String::from("stats.csv"),
-        }];
-        let result = channel.send_files(&ctx, files, |m| m).await;
+        let files = vec![CreateAttachment::bytes(
+            Cow::from(wtr.into_inner().unwrap()),
+            String::from("stats.csv"),
+        )];
+        let result = channel.send_files(&ctx, files, CreateMessage::new()).await;
         if result.is_err() {
             let error = result.err().unwrap();
             error!("{error}");
