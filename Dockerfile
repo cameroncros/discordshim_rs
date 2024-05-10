@@ -20,7 +20,7 @@ RUN cargo build --release --bin discordshim
 # We do not need the Rust toolchain to run the binary!
 FROM ubuntu:latest AS runtime
 WORKDIR app
-COPY --from=builder /root/.cargo/bin/tokio-console /usr/bin
+COPY --from=builder /usr/local/cargo/bin/tokio-console /usr/bin
 COPY --from=builder /app/target/release/discordshim /usr/bin
 ENTRYPOINT ["/usr/bin/discordshim", "serve"]
 HEALTHCHECK CMD netstat -an | grep 23416 > /dev/null; if [ 0 != $? ]; then exit 1; fi;
