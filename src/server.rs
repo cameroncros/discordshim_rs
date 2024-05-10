@@ -87,7 +87,7 @@ impl Server {
 
                     let settings = Arc::new(DiscordSettings {
                         tcpstream: RwLock::new(stream.clone()),
-                        channel: RwLock::new(ChannelId::from(0)),
+                        channel: RwLock::new(ChannelId::default()),
                         prefix: Mutex::new("".to_string()),
                         cycle_time: Mutex::new(0),
                         enabled: Mutex::new(false),

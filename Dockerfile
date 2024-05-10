@@ -11,8 +11,8 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies - this is the caching Docker layer!
 RUN apt update && apt install cmake -y
-RUN cargo chef cook --release --recipe-path recipe.json
 RUN cargo install --locked tokio-console
+RUN cargo chef cook --release --recipe-path recipe.json
 # Build application
 COPY . .
 RUN cargo build --release --bin discordshim
