@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::io::{Cursor, Write};
 
 use serenity::all::CreateAttachment;
-use serenity::model::channel::AttachmentType;
 use zip::write::SimpleFileOptions;
 
 use crate::messages;
@@ -73,7 +72,7 @@ pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<message
     embeds
 }
 
-pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, AttachmentType)> {
+pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, CreateAttachment)> {
     return if filedata.len() < DISCORD_MAX_ATTACHMENT_SIZE {
         let mut attachments = vec![];
         let filename2 = filename.clone();

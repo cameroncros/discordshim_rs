@@ -219,36 +219,55 @@ impl Server {
                 for e in embeds {
                     let mentions = extract_mentions(&e);
 
-                    let mut files = vec![];
-
-                    let mut embed = CreateEmbed::new().title(e.title)
-                        .description(e.description)
-                        .color(e.color)
-                        .author(CreateEmbedAuthor::new(e.author));
-                    for field in e.textfield {
-                        embed = embed.field(field.title, field.text, field.inline);
-                    }
                     if e.snapshot.is_some() {
                         let snapshot = e.snapshot.clone().unwrap();
                         let filename_url = format!("attachment://{}", snapshot.filename);
                         let filedata = snapshot.data.as_slice();
-                        files.push(CreateAttachment::bytes(
+                        let files = vec![CreateAttachment::bytes (
                             Cow::from(filedata),
                             snapshot.filename,
-                        ));
-                        embed = embed.image(filename_url.clone());
-                    }
-
-                    let message = CreateMessage::new().embed(embed).content(mentions);
-                    let result = settings
-                        .channel
-                        .read()
-                        .await
-                        .send_files(&ctx, files, message).await;
-                    if result.is_err() {
-                        let error = result.err().unwrap();
-                        error!("{error}");
-                        return Err(());
+                        )];
+                        let mut embed = CreateEmbed::new().title(e.title)
+                            .description(e.description)
+                            .color(e.color)
+                            .author(CreateEmbedAuthor::new(e.author))
+                            .image(filename_url.clone());
+                        for field in e.textfield {
+                            embed = embed.field(field.title, field.text, field.inline);
+                        }
+                        let message = CreateMessage::new().embed(embed).content(mentions);
+                        let result = settings
+                            .channel
+                            .read()
+                            .await
+                            .send_files(&ctx, files, message)
+                            .await;
+                        if result.is_err() {
+                            let error = result.err().unwrap();
+                            error!("{error}");
+                            return Err(());
+                        }
+                    } else {
+                        let mut embed = CreateEmbed::new().title(e.title)
+                            .description(e.description)
+                            .color(e.color)
+                            .author(CreateEmbedAuthor::new(e.author));
+                        for field in e.textfield {
+                            embed = embed.field(field.title, field.text, field.inline);
+                        }
+                        let message = CreateMessage::new().embed(embed).content(mentions);
+                        
+                        let result = settings
+                            .channel
+                            .read()
+                            .await
+                            .send_message(&ctx, message)
+                            .await;
+                        if result.is_err() {
+                            let error = result.err().unwrap();
+                            error!("{error}");
+                            return Err(());
+                        }
                     }
                 }
                 return Ok(());
