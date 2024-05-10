@@ -105,6 +105,7 @@ async fn run_server(_ctx: Arc<Context>, server: Arc<RwLock<Server>>) {
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init_timed();
+    console_subscriber::init();
 
     for argument in env::args() {
         match argument.to_lowercase().as_str() {
