@@ -24,6 +24,7 @@ dev_deploy:
       cat <<EOT >> .env
       BOT_TOKEN='$TEST_BOT_TOKEN'
       EXTERNAL_PORT=53416
+      DEBUG_PORT=56669
       EOT
     - COMPOSE_PROJECT_NAME=dev_discordshim docker-compose down || true
     - COMPOSE_PROJECT_NAME=dev_discordshim docker-compose up --build -d
@@ -38,7 +39,7 @@ test_dev_deploy:
   script:
     - apk add protoc
     - python3 -m pip install -r requirements.txt
-    - BOT_TOKEN=$TEST_BOT_TOKEN CHANNEL_ID=$CHANNEL_ID DISCORDSHIM_PORT=53416 DISCORDSHIM_ADDR=192.168.1.101 python3 -m pytest
+    - BOT_TOKEN=$TEST_BOT_TOKEN CHANNEL_ID=$CHANNEL_ID DISCORDSHIM_PORT=53416 DISCORDSHIM_ADDR=192.168.1.100 python3 -m pytest
 
 live_deploy:
   tags: [prod]
@@ -53,6 +54,7 @@ live_deploy:
       cat <<EOT >> .env
       BOT_TOKEN='$LIVE_BOT_TOKEN'
       EXTERNAL_PORT=23416
+      DEBUG_PORT=6669
       EOT
     - COMPOSE_PROJECT_NAME=prod_discordshim docker-compose down || true
     - COMPOSE_PROJECT_NAME=prod_discordshim docker-compose up --build -d
