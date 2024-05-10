@@ -5,7 +5,6 @@ services:
     build: .
     ports:
       - "${EXTERNAL_PORT}:23416"
-      - "${DEBUG_PORT}:6669"
     environment:
       - DISCORD_TOKEN=${BOT_TOKEN}
       - HEALTH_CHECK_CHANNEL_ID=1128486273699565661
