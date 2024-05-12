@@ -4,11 +4,12 @@ mod messages;
 mod server;
 mod test;
 
+use color_eyre::eyre;
 use async_std::sync::RwLock;
 use log::error;
 use std::env;
-use std::process::exit;
 use std::sync::Arc;
+use color_eyre::eyre::eyre;
 
 use crate::server::Server;
 
@@ -32,14 +33,12 @@ struct Handler {
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, new_message: Message) {
         // Check for statistics messages
-        if new_message.channel_id == self.healthcheckchannel {
-            if new_message.content == "/stats" {
-                self.server
-                    .read()
-                    .await
-                    .send_stats(new_message.channel_id, ctx.clone())
-                    .await;
-            }
+        if new_message.channel_id == self.healthcheckchannel && new_message.content == "/stats" {
+            self.server
+                .read()
+                .await
+                .send_stats(new_message.channel_id, ctx.clone())
+                .await;
         }
 
         // Check for health check message.
@@ -48,12 +47,12 @@ impl EventHandler for Handler {
                 if new_message.embeds.len() != 1 {
                     return;
                 }
-                let embed1 = new_message.embeds.get(0).unwrap();
+                let embed1 = new_message.embeds.first().unwrap();
                 if embed1.title.is_none() {
                     return;
                 }
                 let flag = embed1.title.as_ref().unwrap().clone();
-                self.server
+                let _ = self.server
                     .read()
                     .await
                     .send_command(new_message.channel_id, new_message.author.id, flag)
@@ -67,7 +66,7 @@ impl EventHandler for Handler {
             return;
         }
         // Process all other messages as normal.
-        self.server
+        let _ = self.server
             .read()
             .await
             .send_command(
@@ -78,7 +77,7 @@ impl EventHandler for Handler {
             .await;
         for attachment in new_message.attachments {
             let filedata = attachment.download().await.unwrap();
-            self.server
+            let _ = self.server
                 .read()
                 .await
                 .send_file(
@@ -97,8 +96,8 @@ impl EventHandler for Handler {
     }
 }
 
-async fn run_server(_ctx: Arc<Context>, server: Arc<RwLock<Server>>) {
-    server.read().await.run(_ctx).await
+async fn run_server(ctx: Arc<Context>, server: Arc<RwLock<Server>>) {
+    server.read().await.run(ctx).await;
 }
 
 #[tokio::main]
@@ -107,21 +106,23 @@ async fn main() {
     console_subscriber::init();
 
     for argument in env::args() {
-        match argument.to_lowercase().as_str() {
+        let result = match argument.to_lowercase().as_str() {
             "serve" => {
-                exit(serve().await);
+                serve().await
             }
             "healthcheck" => {
-                exit(healthcheck().await);
+                healthcheck().await
             }
-            &_ => {}
-        }
+            &_ => {Ok(())}
+        };
+        result.unwrap();  // deliberately panic if we failed.
+        
     }
     error!("Usage: TODO");
 }
 
 
-async fn serve() -> i32 {
+async fn serve() -> eyre::Result<()> {
     let framework: Framework<Data, Error> = Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![],
@@ -137,8 +138,7 @@ async fn serve() -> i32 {
     
     let channelid: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
         .expect("channel id")
-        .parse()
-        .unwrap();
+        .parse()?;
 
     let handler = Handler {
         healthcheckchannel: ChannelId::from(channelid),
@@ -151,13 +151,11 @@ async fn serve() -> i32 {
     let mut client: Client = Client::builder(token, intents)
         .event_handler(handler)
         .framework(framework)
-        .await
-        .expect("Error creating client");
+        .await?;
 
     // start listening for events by starting a single shard
     if let Err(why) = client.start().await {
-        error!("An error occurred while running the client: {:?}", why);
-        return -1;
+        return Err(eyre!("An error occurred while running the client: {:?}", why));
     }
-    return 0;
+    Ok(())
 }

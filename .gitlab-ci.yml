@@ -17,6 +17,14 @@ test:
     - apt update && apt install -y cmake
     - cargo test
 
+lint:
+  stage: test
+  image: rust:buster
+  script:
+    - apt update && apt install -y cmake
+    - rustup component add clippy
+    - cargo clippy
+
 dev_deploy:
   stage: dev
   image: docker/compose:latest

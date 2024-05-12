@@ -22,6 +22,7 @@ serde = "1.0.185"
 console-subscriber = "0.2.0"
 async-std = { version = "1.6", features = ["attributes"] }
 uuid = { version = "1.4.0", features = [ "v4",  "fast-rng" ] }
+color-eyre = "0.6.3"
 
 [build-dependencies]
 protobuf-codegen = "3.2.0"
