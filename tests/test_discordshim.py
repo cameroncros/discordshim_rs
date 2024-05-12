@@ -99,7 +99,7 @@ class TestDiscordShim(LiveDiscordTestCase):
         self.client.sendall(data)
 
         results = self.stop_scraper(waitformessages=7)
-        self.assertIn("Helloworld.dat", results[0].content)
+        self.assertIn("Helloworld.dat.zip.000", results[0].attachments[0].filename)
         self.assertIn("Helloworld.dat.zip.001", results[1].attachments[0].filename)
         self.assertIn("Helloworld.dat.zip.002", results[2].attachments[0].filename)
         self.assertIn("Helloworld.dat.zip.003", results[3].attachments[0].filename)
