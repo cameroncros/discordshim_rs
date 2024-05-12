@@ -6,23 +6,22 @@ mod test;
 
 use async_std::sync::RwLock;
 use log::error;
-use serenity::client::{Context, EventHandler};
-use serenity::Client;
 use std::env;
 use std::process::exit;
 use std::sync::Arc;
-use serenity::all::standard::Configuration;
-use serenity::all::StandardFramework;
 
 use crate::server::Server;
-use serenity::async_trait;
 
 use crate::healthcheck::healthcheck;
-use serenity::model::channel::Message;
-use serenity::model::gateway::Ready;
-use serenity::model::id::ChannelId;
-use serenity::prelude::GatewayIntents;
 use tokio::task;
+
+use poise::{async_trait, Framework, serenity_prelude as serenity};
+use serenity::all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Ready};
+use serenity::Client;
+
+struct Data {} // User data, which is stored and accessible in all command invocations
+type Error = Box<dyn std::error::Error + Send + Sync>;
+
 
 struct Handler {
     healthcheckchannel: ChannelId,
@@ -121,9 +120,21 @@ async fn main() {
     error!("Usage: TODO");
 }
 
+
 async fn serve() -> i32 {
-    let framework = StandardFramework::new();
-    framework.configure(Configuration::new().prefix("~"));
+    let framework: Framework<Data, Error> = Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: vec![],
+            ..Default::default()
+        })
+        .setup(|ctx, _ready, framework| {
+            Box::pin(async move {
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(Data {})
+            })
+        })
+        .build();
+    
     let channelid: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
         .expect("channel id")
         .parse()
