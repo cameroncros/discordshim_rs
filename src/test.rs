@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(ec.title, embeds[0].title);
         assert_eq!(ec.description, embeds[0].description);
         let mut num_fields = embeds[0].textfield.len();
-        for embed in embeds {
+        for embed in &embeds[1..] {
             assert_eq!("", embed.title);
             assert_eq!("\u{200b}", embed.description);
             num_fields += embed.textfield.len();
