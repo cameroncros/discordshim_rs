@@ -1,10 +1,13 @@
-use crate::messages;
-use crate::messages::TextField;
-use serenity::model::channel::AttachmentType;
 use std::borrow::Cow;
 use std::io::{Cursor, Write};
 
-pub const ONE_MEGABYTE: usize = 1 * 1024 * 1024;
+use serenity::all::CreateAttachment;
+use zip::write::SimpleFileOptions;
+
+use crate::messages;
+use crate::messages::TextField;
+
+pub const ONE_MEGABYTE: usize = 1024 * 1024;
 pub const DISCORD_MAX_ATTACHMENT_SIZE: usize = 5 * ONE_MEGABYTE;
 
 pub const DISCORD_MAX_TITLE: usize = 256;
@@ -19,7 +22,7 @@ fn truncate(string: String, length: usize) -> String {
     if string.len() > length {
         return string[0..length].to_string();
     }
-    return string;
+    string
 }
 
 pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<messages::EmbedContent> {
@@ -35,7 +38,7 @@ pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<message
     first.snapshot = embed_content.snapshot;
 
     let author = truncate(embed_content.author, DISCORD_MAX_AUTHOR);
-    first.author = author.clone();
+    first.author.clone_from(&author);
     first.color = embed_content.color;
 
     total_chars = first.title.len() + first.description.len() + first.author.len();
@@ -47,8 +50,8 @@ pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<message
         let title = truncate(field.title, DISCORD_MAX_TITLE);
         let text = truncate(field.text, DISCORD_MAX_VALUE);
 
-        trimmed_field.title = title.clone();
-        trimmed_field.text = text.clone();
+        trimmed_field.title.clone_from(&title);
+        trimmed_field.text.clone_from(&text);
         trimmed_field.inline = field.inline;
 
         let next_size = total_chars + trimmed_field.title.len() + trimmed_field.text.len();
@@ -56,8 +59,8 @@ pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<message
             embeds.push(last);
             last = messages::EmbedContent::default();
             last.description = "\u{200b}".to_string();
-            last.author = author.clone();
-            last.color = embed_content.color.clone();
+            last.author.clone_from(&author);
+            last.color = embed_content.color;
             total_chars = last.title.len() + last.description.len() + last.author.len();
         }
 
@@ -69,16 +72,16 @@ pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<message
     embeds
 }
 
-pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, AttachmentType)> {
+pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, CreateAttachment)> {
     return if filedata.len() < DISCORD_MAX_ATTACHMENT_SIZE {
         let mut attachments = vec![];
         let filename2 = filename.clone();
         attachments.push((
             filename,
-            AttachmentType::Bytes {
-                data: Cow::from(filedata),
-                filename: filename2,
-            },
+            CreateAttachment::bytes(
+                Cow::from(filedata),
+                filename2,
+            )
         ));
         attachments
     } else {
@@ -86,25 +89,24 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Atta
         let bytes = Vec::new();
         let zipfile = Cursor::new(bytes);
         let mut zip = zip::ZipWriter::new(zipfile);
-        zip.start_file(filename.clone(), Default::default())
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);        
+        zip.start_file(filename.clone(), options)
             .unwrap();
         zip.write_all(filedata).unwrap();
         let zipdata = zip.finish().unwrap().into_inner();
 
-        let mut i = 0;
         let chunks = zipdata.chunks(ONE_MEGABYTE);
-        for chunk in chunks {
+        for (i, chunk) in chunks.enumerate() {
             let zipfilename = format!("{}.zip.{:0>3}", filename, i);
             let mut data = vec![0u8; chunk.len()];
             data.copy_from_slice(chunk);
             attachments.push((
                 zipfilename.clone(),
-                AttachmentType::Bytes {
-                    data: Cow::from(data),
-                    filename: zipfilename,
-                },
+                CreateAttachment::bytes(
+                    Cow::from(data),
+                    zipfilename
+                )
             ));
-            i += 1;
         }
         attachments
     };

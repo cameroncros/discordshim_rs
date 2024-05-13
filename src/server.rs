@@ -14,11 +14,12 @@ use regex::Regex;
 use serenity::client::Context;
 use serenity::model::id::{ChannelId, UserId};
 use serenity::model::prelude::OnlineStatus;
-use serenity::model::prelude::{Activity, AttachmentType};
 use std::borrow::Cow;
 use std::env;
 use std::sync::Arc;
 use std::time::SystemTime;
+use color_eyre::eyre;
+use serenity::all::{ActivityData, CreateAttachment, CreateEmbed, CreateEmbedAuthor, CreateMessage};
 
 #[derive(serde::Serialize)]
 struct Stats {
@@ -62,10 +63,10 @@ pub(crate) struct Server {
 
 impl Server {
     pub(crate) fn new() -> Server {
-        return Server {
+        Server {
             clients: Arc::new(Mutex::new(Vec::new())),
             last_presense_update: Mutex::new(SystemTime::UNIX_EPOCH),
-        };
+        }
     }
 
     pub(crate) async fn run(&self, ctx: Arc<Context>) {
@@ -82,13 +83,13 @@ impl Server {
                     let f = ctx2.clone();
                     let c = clients2.clone();
                     let stream = tcpstream.unwrap();
-                    let peer_addr = stream.peer_addr().unwrap().clone();
+                    let peer_addr = stream.peer_addr().unwrap();
                     info!("Received connection from: {}", peer_addr);
 
                     let settings = Arc::new(DiscordSettings {
                         tcpstream: RwLock::new(stream.clone()),
-                        channel: RwLock::new(ChannelId(0)),
-                        prefix: Mutex::new("".to_string()),
+                        channel: RwLock::new(ChannelId::default()),
+                        prefix: Mutex::new(String::new()),
                         cycle_time: Mutex::new(0),
                         enabled: Mutex::new(false),
                         num_messages: Mutex::new(0),
@@ -103,7 +104,7 @@ impl Server {
                     let _loop_res = self.connection_loop(stream, settings.clone(), f).await;
                     c.lock()
                         .await
-                        .retain(|item| !Arc::<DiscordSettings>::ptr_eq(&item, &settings));
+                        .retain(|item| !Arc::<DiscordSettings>::ptr_eq(item, &settings));
 
                     let num_servers = c.lock().await.len();
                     self.update_presence(ctx2.clone(), num_servers).await;
@@ -123,12 +124,11 @@ impl Server {
 
         let cloud = env::var("CLOUD_SERVER");
         if cloud.is_ok() {
-            let presence = format!("to {} instances", num_servers);
+            let presence = format!("to {num_servers} instances");
             ctx.set_presence(
-                Some(Activity::streaming(presence, "https://octoprint.org")),
+                Some(ActivityData::streaming(presence, "https://octoprint.org").unwrap()),
                 OnlineStatus::Online,
-            )
-            .await;
+            );
         }
 
         *last_update = now;
@@ -139,45 +139,19 @@ impl Server {
         mut stream: TcpStream,
         settings: Arc<DiscordSettings>,
         ctx: Arc<Context>,
-    ) {
+    ) -> eyre::Result<()> {
         loop {
             let length_buf = &mut [0u8; 4];
-            match stream.read_exact(length_buf).await {
-                Ok(_) => {}
-                Err(message) => {
-                    debug!("Read length failed with [{message}]");
-                    return;
-                }
-            }
+            stream.read_exact(length_buf).await?;
             let length = LittleEndian::read_u32(length_buf) as usize;
             debug!("Incoming response, {length} bytes long.");
 
             let mut buf = vec![0u8; length];
-            match stream.read_exact(&mut buf).await {
-                Ok(_) => {}
-                Err(message) => {
-                    debug!("Read data failed with [{message}]");
-                    return;
-                }
-            }
+            stream.read_exact(&mut buf).await?;
 
-            let result = messages::Response::parse_from_bytes(buf.as_slice());
-            if result.is_err() {
-                debug!(
-                    "Parse data failed with [{}]",
-                    result.err().unwrap().to_string()
-                );
-                return;
-            }
-            let response = result.unwrap();
+            let response = messages::Response::parse_from_bytes(buf.as_slice())?;
 
-            let result = self
-                .handle_task(settings.clone(), response, ctx.clone())
-                .await;
-            if result.is_err() {
-                debug!("Failed to send response");
-                return;
-            }
+            self.handle_task(settings.clone(), response, ctx.clone()).await?;
         }
     }
 
@@ -186,31 +160,28 @@ impl Server {
         settings: Arc<DiscordSettings>,
         response: messages::Response,
         ctx: Arc<Context>,
-    ) -> Result<(), ()> {
+    ) -> eyre::Result<()> {
         *settings.num_messages.lock().await += 1;
         *settings.total_data.lock().await += response.compute_size();
         match response.field {
             None => {
-                return Ok(());
+                Ok(())
             }
             Some(messages::response::Field::File(protofile)) => {
                 let filename = protofile.filename.clone();
                 let filedata = protofile.data.as_slice();
                 let files = split_file(filename, filedata);
                 for file in files {
-                    let result = settings
+                    let filename = file.1.filename.clone();
+                    let file_builder = CreateMessage::new().add_file(CreateAttachment::bytes(file.0, filename));
+                    settings
                         .channel
                         .read()
                         .await
-                        .send_files(&ctx, vec![file.1], |m| m.content(file.0))
-                        .await;
-                    if result.is_err() {
-                        let error = result.err().unwrap();
-                        error!("{error}");
-                        return Err(());
-                    }
+                        .send_files(&ctx, vec![file.1], file_builder)
+                        .await?;
                 }
-                return Ok(());
+                Ok(())
             }
 
             Some(messages::response::Field::Embed(response_embed)) => {
@@ -222,93 +193,76 @@ impl Server {
                         let snapshot = e.snapshot.clone().unwrap();
                         let filename_url = format!("attachment://{}", snapshot.filename);
                         let filedata = snapshot.data.as_slice();
-                        let files = vec![AttachmentType::Bytes {
-                            data: Cow::from(filedata),
-                            filename: snapshot.filename,
-                        }];
-                        let result = settings
+                        let files = vec![CreateAttachment::bytes (
+                            Cow::from(filedata),
+                            snapshot.filename,
+                        )];
+                        let mut embed = CreateEmbed::new().title(e.title)
+                            .description(e.description)
+                            .color(e.color)
+                            .author(CreateEmbedAuthor::new(e.author))
+                            .image(filename_url.clone());
+                        for field in e.textfield {
+                            embed = embed.field(field.title, field.text, field.inline);
+                        }
+                        let message = CreateMessage::new().embed(embed).content(mentions);
+                        settings
                             .channel
                             .read()
                             .await
-                            .send_files(&ctx, files, |m| {
-                                m.embed(|f| {
-                                    f.title(e.title)
-                                        .description(e.description)
-                                        .color(e.color)
-                                        .author(|a| a.name(e.author));
-                                    for field in e.textfield {
-                                        f.field(field.title, field.text, field.inline);
-                                    }
-                                    f.image(filename_url.clone());
-                                    f
-                                })
-                                .content(mentions)
-                            })
-                            .await;
-                        if result.is_err() {
-                            let error = result.err().unwrap();
-                            error!("{error}");
-                            return Err(());
-                        }
+                            .send_files(&ctx, files, message)
+                            .await?;
                     } else {
-                        let result = settings
+                        let mut embed = CreateEmbed::new().title(e.title)
+                            .description(e.description)
+                            .color(e.color)
+                            .author(CreateEmbedAuthor::new(e.author));
+                        for field in e.textfield {
+                            embed = embed.field(field.title, field.text, field.inline);
+                        }
+                        let message = CreateMessage::new().embed(embed).content(mentions);
+                        
+                        settings
                             .channel
                             .read()
                             .await
-                            .send_message(&ctx, |m| {
-                                m.embed(|f| {
-                                    f.title(e.title)
-                                        .description(e.description)
-                                        .color(e.color)
-                                        .author(|a| a.name(e.author));
-                                    for field in e.textfield {
-                                        f.field(field.title, field.text, field.inline);
-                                    }
-                                    f
-                                })
-                                .content(mentions)
-                            })
-                            .await;
-                        if result.is_err() {
-                            let error = result.err().unwrap();
-                            error!("{error}");
-                            return Err(());
-                        }
+                            .send_message(&ctx, message)
+                            .await?;
                     }
                 }
-                return Ok(());
+                Ok(())
             }
 
             Some(messages::response::Field::Presence(presence)) => {
                 let cloud = env::var("CLOUD_SERVER");
                 if cloud.is_err() {
-                    let activity = Activity::playing(presence.presence);
+                    let activity = ActivityData::playing(presence.presence);
                     ctx.shard.set_presence(Some(activity), OnlineStatus::Online);
                 }
-                return Ok(());
+                Ok(())
             }
 
             Some(messages::response::Field::Settings(new_settings)) => {
-                *settings.channel.write().await = ChannelId(new_settings.channel_id);
+                *settings.channel.write().await = ChannelId::from(new_settings.channel_id);
                 *settings.prefix.lock().await = new_settings.command_prefix;
                 *settings.cycle_time.lock().await = new_settings.cycle_time;
                 *settings.enabled.lock().await = new_settings.presence_enabled;
-                return Ok(());
+                Ok(())
             }
         }
     }
 
-    pub(crate) async fn send_command(&self, channel: ChannelId, user: UserId, command: String) {
+    pub(crate) async fn send_command(&self, channel: ChannelId, user: UserId, command: String) -> eyre::Result<()>{
         let mut request = messages::Request::default();
-        request.user = user.0;
+        request.user = user.get();
         request.message = Some(messages::request::Message::Command(command));
         let data = request.write_to_bytes().unwrap();
 
         self._send_data(channel, data).await
     }
 
-    async fn _send_data(&self, channel: ChannelId, data: Vec<u8>) {
-        let length = data.len() as u32;
+    async fn _send_data(&self, channel: ChannelId, data: Vec<u8>) -> eyre::Result<()> {
+        let length = u32::try_from(data.len())?;
         let length_buf = &mut [0u8; 4];
         LittleEndian::write_u32(length_buf, length);
 
@@ -316,14 +270,14 @@ impl Server {
 
         let mut found = 0;
         for client in c.as_slice() {
-            if channel.0 != 0 && channel.0 == client.channel.read().await.0 {
+            if channel.get() != 0 && channel.get() == client.channel.read().await.get() {
                 let mut tcpstream = client.tcpstream.write().await;
 
                 if tcpstream.write_all(length_buf).await.is_err() {
                     error!("Failed to send length");
                     continue;
                 }
-                if tcpstream.write_all(&*data).await.is_err() {
+                if tcpstream.write_all(&data).await.is_err() {
                     error!("Failed to send message");
                     continue;
                 }
@@ -331,6 +285,7 @@ impl Server {
             }
         }
         info!("Sent message to {found} clients");
+        Ok(())
     }
 
     pub(crate) async fn send_file(
@@ -339,13 +294,11 @@ impl Server {
         user: UserId,
         filename: String,
         file: Vec<u8>,
-    ) {
-        let mut request = messages::Request::default();
-        request.user = user.0;
-        let mut req_file = messages::ProtoFile::default();
-        req_file.data = file;
-        req_file.filename = filename;
-        request.message = Some(messages::request::Message::File(req_file));
+    ) -> eyre::Result<()> {
+        let req_file = messages::ProtoFile { data: file, filename, ..Default::default() };
+        let request = messages::Request { user: user.get(),
+            message: Some(messages::request::Message::File(req_file)), 
+            ..Default::default() };
         let data = request.write_to_bytes().unwrap();
 
         self._send_data(channel, data).await
@@ -359,11 +312,11 @@ impl Server {
         }
         wtr.flush().unwrap();
 
-        let files = vec![AttachmentType::Bytes {
-            data: Cow::from(wtr.into_inner().unwrap()),
-            filename: String::from("stats.csv"),
-        }];
-        let result = channel.send_files(&ctx, files, |m| m).await;
+        let files = vec![CreateAttachment::bytes(
+            Cow::from(wtr.into_inner().unwrap()),
+            String::from("stats.csv"),
+        )];
+        let result = channel.send_files(&ctx, files, CreateMessage::new()).await;
         if result.is_err() {
             let error = result.err().unwrap();
             error!("{error}");
