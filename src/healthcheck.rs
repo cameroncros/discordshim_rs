@@ -1,17 +1,18 @@
-use crate::messages;
+use std::env;
+
 use async_std::io::ReadExt;
 use async_std::net::TcpStream;
 use byteorder::{ByteOrder, LittleEndian};
-use futures::AsyncWriteExt;
-use protobuf::Message;
-use std::env;
 use color_eyre::eyre;
 use color_eyre::eyre::eyre;
-use crate::messages::Settings;
+use futures::AsyncWriteExt;
+use protobuf::Message;
+
+use crate::messages;
 
 pub async fn healthcheck() -> eyre::Result<()> {
     let mut client = TcpStream::connect("127.0.0.1:23416").await.unwrap();
-    let channelid: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
+    let channel_id: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
         .expect("channel id")
         .parse()?;
     let flag = uuid::Uuid::new_v4().to_string();
@@ -19,7 +20,11 @@ pub async fn healthcheck() -> eyre::Result<()> {
     // Send settings
     {
         let mut response = messages::Response::new();
-        let settings =  Settings { channel_id: channelid, ..Default::default() };
+        let mut settings = messages::Settings {
+            channel_id,
+            ..Default::default()
+        };
+        settings.channel_id = channel_id;
         response.set_settings(settings);
 
         let bytes = response.write_to_bytes()?;

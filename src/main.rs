@@ -116,7 +116,7 @@ async fn main() {
             &_ => {Ok(())}
         };
         result.unwrap();  // deliberately panic if we failed.
-        
+
     }
     error!("Usage: TODO");
 }
@@ -135,7 +135,7 @@ async fn serve() -> eyre::Result<()> {
             })
         })
         .build();
-    
+
     let channelid: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
         .expect("channel id")
         .parse()?;
