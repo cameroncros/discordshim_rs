@@ -164,9 +164,7 @@ impl Server {
         *settings.num_messages.lock().await += 1;
         *settings.total_data.lock().await += response.compute_size();
         match response.field {
-            None => {
-                Ok(())
-            }
+            None => Ok(()),
             Some(messages::response::Field::File(protofile)) => {
                 let filename = protofile.filename.clone();
                 let filedata = protofile.data.as_slice();
@@ -295,10 +293,18 @@ impl Server {
         filename: String,
         file: Vec<u8>,
     ) -> eyre::Result<()> {
-        let req_file = messages::ProtoFile { data: file, filename, ..Default::default() };
-        let request = messages::Request { user: user.get(),
-            message: Some(messages::request::Message::File(req_file)), 
-            ..Default::default() };
+        let req_file = messages::ProtoFile {
+            data: file,
+            filename,
+            ..Default::default()
+        };
+
+        let request = messages::Request {
+            user: user.get(),
+            message: Some(messages::request::Message::File(req_file)),
+            ..Default::default()
+        };
+
         let data = request.write_to_bytes().unwrap();
 
         self._send_data(channel, data).await

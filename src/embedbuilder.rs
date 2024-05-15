@@ -89,7 +89,7 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Crea
         let bytes = Vec::new();
         let zipfile = Cursor::new(bytes);
         let mut zip = zip::ZipWriter::new(zipfile);
-        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);        
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
         zip.start_file(filename.clone(), options)
             .unwrap();
         zip.write_all(filedata).unwrap();
