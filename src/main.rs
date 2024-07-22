@@ -5,7 +5,6 @@ mod server;
 mod test;
 
 use color_eyre::eyre;
-use async_std::sync::RwLock;
 use log::error;
 use std::env;
 use std::sync::Arc;
@@ -26,7 +25,7 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 
 struct Handler {
     healthcheckchannel: ChannelId,
-    server: Arc<RwLock<Server>>,
+    server: Arc<Server>,
 }
 
 #[async_trait]
@@ -35,14 +34,12 @@ impl EventHandler for Handler {
         // Check for statistics messages
         if new_message.channel_id == self.healthcheckchannel && new_message.content == "/stats" {
             self.server
-                .read()
-                .await
                 .send_stats(new_message.channel_id, ctx.clone())
                 .await;
         }
 
         // Check for health check message.
-        if new_message.is_own(ctx.cache) {
+        if new_message.author.id == ctx.cache.current_user().id {
             if new_message.channel_id == self.healthcheckchannel {
                 if new_message.embeds.len() != 1 {
                     return;
@@ -53,8 +50,6 @@ impl EventHandler for Handler {
                 }
                 let flag = embed1.title.as_ref().unwrap().clone();
                 let _ = self.server
-                    .read()
-                    .await
                     .send_command(new_message.channel_id, new_message.author.id, flag)
                     .await;
                 return;
@@ -62,13 +57,11 @@ impl EventHandler for Handler {
             return;
         }
 
-        if new_message.is_private() {
+        if new_message.guild_id.is_none() {
             return;
         }
         // Process all other messages as normal.
         let _ = self.server
-            .read()
-            .await
             .send_command(
                 new_message.channel_id,
                 new_message.author.id,
@@ -78,8 +71,6 @@ impl EventHandler for Handler {
         for attachment in new_message.attachments {
             let filedata = attachment.download().await.unwrap();
             let _ = self.server
-                .read()
-                .await
                 .send_file(
                     new_message.channel_id,
                     new_message.author.id,
@@ -96,8 +87,8 @@ impl EventHandler for Handler {
     }
 }
 
-async fn run_server(ctx: Arc<Context>, server: Arc<RwLock<Server>>) {
-    server.read().await.run(ctx).await;
+async fn run_server(ctx: Arc<Context>, server: Arc<Server>) {
+    server.run(ctx).await;
 }
 
 #[tokio::main]
@@ -142,7 +133,7 @@ async fn serve() -> eyre::Result<()> {
 
     let handler = Handler {
         healthcheckchannel: ChannelId::from(channelid),
-        server: Arc::new(RwLock::new(Server::new())),
+        server: Arc::new(Server::new()),
     };
 
     // Login with a bot token from the environment

@@ -9,7 +9,7 @@ edition = "2021"
 serenity = "0.12.1"
 poise = "0.6.1"
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
-prost = "0.12.4"
+prost = "0.13.1"
 futures = "0.3"
 byteorder = "1.4.3"
 zip = "2.1.3"
@@ -19,11 +19,11 @@ pretty_env_logger = "0.5.0"
 regex = "1.9.3"
 csv = "1.2.2"
 serde = "1.0.201"
-console-subscriber = "0.2.0"
+console-subscriber = "0.3.0"
 async-std = { version = "1.12", features = ["attributes"] }
 uuid = { version = "1.8.0", features = [ "v4",  "fast-rng" ] }
 color-eyre = "0.6.3"
 
 [build-dependencies]
-protobuf-codegen = "3.4.0"
-protobuf-parse = "3.4.0"
+protobuf-codegen = "3.5.0"
+protobuf-parse = "3.5.0"
