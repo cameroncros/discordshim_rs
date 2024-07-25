@@ -24,6 +24,9 @@ use crate::helper::{receive_msg, send_request};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{RwLock};
 
+pub type ClientList = Arc<RwLock<Vec<Arc<DiscordSettings>>>>;
+type SharedSystemTime = Arc<RwLock<SystemTime>>;
+
 #[derive(serde::Serialize)]
 struct Stats {
     ip: String,
@@ -33,6 +36,8 @@ struct Stats {
 
 struct Config {
     channelid: RwLock<ChannelId>,
+
+    // Only relevant when self-hosting, global discordshim won't support presence anyway
     prefix: RwLock<String>,
     cycle_time: RwLock<i32>,
     enabled: RwLock<bool>,
@@ -40,30 +45,13 @@ struct Config {
 
 pub(crate) struct DiscordSettings {
     sender: UnboundedSender<Request>,
-    // Only relevant when self-hosting, global discordshim won't support presence anyway
     config: Config,
     stats: Stats
 }
 
-impl DiscordSettings {
-    async fn get_stats(&self) -> &Stats {
-        &self.stats
-    }
-}
-
-type ClientList = Arc<RwLock<Vec<Arc<DiscordSettings>>>>;
-type SharedSystemTime = Arc<RwLock<SystemTime>>;
-
-pub(crate) struct Server {
-    pub clients: ClientList,
-    last_presense_update: SharedSystemTime,
-}
-
-
-
 async fn update_presence(last_presense_update: SharedSystemTime, ctx: Arc<Context>, num_servers: usize) {
     let now = SystemTime::now();
-    
+
     {
         let last_update = last_presense_update.read().await;
         if now.duration_since(*last_update).unwrap().as_secs() < 60 {
@@ -262,7 +250,7 @@ pub(crate) async fn send_stats(channel: ChannelId, ctx: Context, clients: Client
     let mut wtr = Writer::from_writer(vec![]);
     let c = clients.read().await;
     for client in c.as_slice() {
-        wtr.serialize(client.get_stats().await).unwrap();
+        wtr.serialize(&client.stats).unwrap();
     }
     wtr.flush().unwrap();
 
@@ -326,28 +314,21 @@ async fn connection_handler(tcpstream: TcpStream,
         Ok(())
 }
 
-impl Server {
-    pub(crate) fn new() -> Server {
-        Server {
-            clients: Arc::new(RwLock::new(Vec::new())),
-            last_presense_update: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
-        }
-    }
+pub(crate) async fn run_server(ctx: Arc<Context>, clients: ClientList) {
+    debug!("Starting TCP listener");
+    let listener = TcpListener::bind("0.0.0.0:23416")
+        .await
+        .expect("Failed to bind");
+    
+    let last_presense_update = Arc::new(RwLock::new(SystemTime::now()));
 
-    pub(crate) async fn run(&self, ctx: Arc<Context>) {
-        debug!("Starting TCP listener");
-        let listener = TcpListener::bind("0.0.0.0:23416")
-            .await
-            .expect("Failed to bind");
-
-        loop {
-            match listener.accept().await {
-                Ok((tcpstream, _)) => {
-                    tokio::spawn(connection_handler(tcpstream, ctx.clone(), self.clients.clone(), self.last_presense_update.clone()));
-                }
-                Err(_) => {
-                    tracing::error!("Failed to accept")
-                }
+    loop {
+        match listener.accept().await {
+            Ok((tcpstream, _)) => {
+                tokio::spawn(connection_handler(tcpstream, ctx.clone(), clients.clone(), last_presense_update.clone()));
+            }
+            Err(_) => {
+                tracing::error!("Failed to accept")
             }
         }
     }
