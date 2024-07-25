@@ -3,6 +3,7 @@ mod healthcheck;
 mod messages;
 mod server;
 mod test;
+mod helper;
 
 use color_eyre::eyre;
 use log::error;
@@ -10,7 +11,7 @@ use std::env;
 use std::sync::Arc;
 use color_eyre::eyre::eyre;
 
-use crate::server::Server;
+use crate::server::{ClientList, run_server, send_command, send_file, send_stats};
 
 use crate::healthcheck::healthcheck;
 use tokio::task;
@@ -18,6 +19,7 @@ use tokio::task;
 use poise::{async_trait, Framework, serenity_prelude as serenity};
 use serenity::all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Ready};
 use serenity::Client;
+use tokio::sync::RwLock;
 
 struct Data {} // User data, which is stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -25,7 +27,7 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 
 struct Handler {
     healthcheckchannel: ChannelId,
-    server: Arc<Server>,
+    clients: ClientList,
 }
 
 #[async_trait]
@@ -33,8 +35,7 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, new_message: Message) {
         // Check for statistics messages
         if new_message.channel_id == self.healthcheckchannel && new_message.content == "/stats" {
-            self.server
-                .send_stats(new_message.channel_id, ctx.clone())
+            send_stats(new_message.channel_id, ctx.clone(), self.clients.clone())
                 .await;
         }
 
@@ -49,8 +50,7 @@ impl EventHandler for Handler {
                     return;
                 }
                 let flag = embed1.title.as_ref().unwrap().clone();
-                let _ = self.server
-                    .send_command(new_message.channel_id, new_message.author.id, flag)
+                let _ = send_command(new_message.channel_id, new_message.author.id, flag, self.clients.clone())
                     .await;
                 return;
             }
@@ -61,21 +61,21 @@ impl EventHandler for Handler {
             return;
         }
         // Process all other messages as normal.
-        let _ = self.server
-            .send_command(
+        let _ = send_command(
                 new_message.channel_id,
                 new_message.author.id,
                 new_message.content,
+                self.clients.clone()
             )
             .await;
         for attachment in new_message.attachments {
             let filedata = attachment.download().await.unwrap();
-            let _ = self.server
-                .send_file(
+            let _ = send_file(
                     new_message.channel_id,
                     new_message.author.id,
                     attachment.filename,
                     filedata,
+                    self.clients.clone()
                 )
                 .await;
         }
@@ -83,12 +83,8 @@ impl EventHandler for Handler {
 
     async fn ready(&self, _ctx: Context, _ready: Ready) {
         let ctx = Arc::new(_ctx);
-        task::spawn(run_server(ctx, self.server.clone()));
+        task::spawn(run_server(ctx, self.clients.clone()));
     }
-}
-
-async fn run_server(ctx: Arc<Context>, server: Arc<Server>) {
-    server.run(ctx).await;
 }
 
 #[tokio::main]
@@ -133,7 +129,7 @@ async fn serve() -> eyre::Result<()> {
 
     let handler = Handler {
         healthcheckchannel: ChannelId::from(channelid),
-        server: Arc::new(Server::new()),
+        clients: Arc::new(RwLock::new(Vec::new())),
     };
 
     // Login with a bot token from the environment
