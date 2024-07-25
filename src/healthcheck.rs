@@ -1,14 +1,14 @@
 use std::env;
 
-use async_std::io::ReadExt;
-use async_std::net::TcpStream;
 use byteorder::{ByteOrder, LittleEndian};
 use color_eyre::eyre;
 use color_eyre::eyre::eyre;
-use futures::AsyncWriteExt;
 use protobuf::Message;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 use crate::messages;
+use crate::messages::Response;
 
 pub async fn healthcheck() -> eyre::Result<()> {
     let mut client = TcpStream::connect("127.0.0.1:23416").await.unwrap();
@@ -27,20 +27,18 @@ pub async fn healthcheck() -> eyre::Result<()> {
         settings.channel_id = channel_id;
         response.set_settings(settings);
 
-        let bytes = response.write_to_bytes()?;
-        send_data(&mut client, bytes).await?;
+        send_response(&mut client, response).await?;
     }
     // Send flag
     {
-        let mut response = messages::Response::new();
+        let mut response = Response::new();
         let message = messages::EmbedContent {
             title: flag.clone(),
             ..Default::default()
         };
         response.set_embed(message);
 
-        let bytes = response.write_to_bytes()?;
-        send_data(&mut client, bytes).await?;
+        send_response(&mut client, response).await?;
     }
 
     // Read up to 5 responses
@@ -60,7 +58,10 @@ pub async fn healthcheck() -> eyre::Result<()> {
     Err(eyre!("Failed healthcheck"))
 }
 
-async fn send_data(tcpstream: &mut TcpStream, data: Vec<u8>) -> eyre::Result<()> {
+pub async fn send_response(tcpstream: &mut (impl AsyncWriteExt + Unpin), msg: Response) -> eyre::Result<()> {
+    let mut data = vec![];
+    msg.write_to_vec(&mut data)?;
+
     let length = data.len() as u32;
     let length_buf = &mut [0u8; 4];
     LittleEndian::write_u32(length_buf, length);

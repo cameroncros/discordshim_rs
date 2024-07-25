@@ -3,6 +3,7 @@ mod healthcheck;
 mod messages;
 mod server;
 mod test;
+mod helper;
 
 use color_eyre::eyre;
 use log::error;
@@ -10,7 +11,7 @@ use std::env;
 use std::sync::Arc;
 use color_eyre::eyre::eyre;
 
-use crate::server::Server;
+use crate::server::{send_command, send_file, send_stats, Server};
 
 use crate::healthcheck::healthcheck;
 use tokio::task;
@@ -33,8 +34,7 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, new_message: Message) {
         // Check for statistics messages
         if new_message.channel_id == self.healthcheckchannel && new_message.content == "/stats" {
-            self.server
-                .send_stats(new_message.channel_id, ctx.clone())
+            send_stats(new_message.channel_id, ctx.clone(), self.server.clients.clone())
                 .await;
         }
 
@@ -49,8 +49,7 @@ impl EventHandler for Handler {
                     return;
                 }
                 let flag = embed1.title.as_ref().unwrap().clone();
-                let _ = self.server
-                    .send_command(new_message.channel_id, new_message.author.id, flag)
+                let _ = send_command(new_message.channel_id, new_message.author.id, flag, self.server.clients.clone())
                     .await;
                 return;
             }
@@ -61,21 +60,21 @@ impl EventHandler for Handler {
             return;
         }
         // Process all other messages as normal.
-        let _ = self.server
-            .send_command(
+        let _ = send_command(
                 new_message.channel_id,
                 new_message.author.id,
                 new_message.content,
+                self.server.clients.clone()
             )
             .await;
         for attachment in new_message.attachments {
             let filedata = attachment.download().await.unwrap();
-            let _ = self.server
-                .send_file(
+            let _ = send_file(
                     new_message.channel_id,
                     new_message.author.id,
                     attachment.filename,
                     filedata,
+                    self.server.clients.clone()
                 )
                 .await;
         }
