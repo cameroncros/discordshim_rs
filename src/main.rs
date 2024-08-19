@@ -9,6 +9,7 @@ use color_eyre::eyre;
 use log::error;
 use std::env;
 use std::sync::Arc;
+use std::time::Duration;
 use color_eyre::eyre::eyre;
 
 use crate::server::{ClientList, run_server, send_command, send_file, send_stats};
@@ -17,9 +18,10 @@ use crate::healthcheck::healthcheck;
 use tokio::task;
 
 use poise::{async_trait, Framework, serenity_prelude as serenity};
-use serenity::all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Ready};
+use serenity::all::{ActivityData, ChannelId, Context, EventHandler, GatewayIntents, Message, OnlineStatus, Ready};
 use serenity::Client;
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 
 struct Data {} // User data, which is stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -83,6 +85,7 @@ impl EventHandler for Handler {
 
     async fn ready(&self, _ctx: Context, _ready: Ready) {
         let ctx = Arc::new(_ctx);
+        task::spawn(update_presence(ctx.clone(), self.clients.clone()));
         task::spawn(run_server(ctx, self.clients.clone()));
     }
 }
@@ -145,4 +148,21 @@ async fn serve() -> eyre::Result<()> {
         return Err(eyre!("An error occurred while running the client: {:?}", why));
     }
     Ok(())
+}
+
+async fn update_presence(ctx: Arc<Context>, clients: ClientList) {
+    loop {
+        let cloud = env::var("CLOUD_SERVER");
+        if cloud.is_ok() {
+            let num_servers = clients.read().await.len();
+            let presence = format!("to {num_servers} instances");
+            ctx.set_presence(
+                Some(ActivityData::streaming(presence, "https://octoprint.org").unwrap()),
+                OnlineStatus::Online,
+            );
+        } else {
+            todo!("Implement presence")
+        }
+        sleep(Duration::from_secs(60)).await;
+    }
 }

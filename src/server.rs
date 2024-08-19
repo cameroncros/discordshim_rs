@@ -11,9 +11,8 @@ use serenity::model::prelude::OnlineStatus;
 use std::borrow::Cow;
 use std::env;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64};
 use std::sync::atomic::Ordering::Relaxed;
-use std::time::SystemTime;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use color_eyre::eyre;
 use color_eyre::eyre::eyre;
@@ -25,7 +24,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{RwLock};
 
 pub type ClientList = Arc<RwLock<Vec<Arc<DiscordSettings>>>>;
-type SharedSystemTime = Arc<RwLock<SystemTime>>;
 
 #[derive(serde::Serialize)]
 struct Stats {
@@ -39,8 +37,8 @@ struct Config {
 
     // Only relevant when self-hosting, global discordshim won't support presence anyway
     prefix: RwLock<String>,
-    cycle_time: RwLock<i32>,
-    enabled: RwLock<bool>,
+    cycle_time: AtomicI32,
+    enabled: AtomicBool,
 }
 
 pub(crate) struct DiscordSettings {
@@ -48,29 +46,6 @@ pub(crate) struct DiscordSettings {
     config: Config,
     stats: Stats
 }
-
-async fn update_presence(last_presense_update: SharedSystemTime, ctx: Arc<Context>, num_servers: usize) {
-    let now = SystemTime::now();
-
-    {
-        let last_update = last_presense_update.read().await;
-        if now.duration_since(*last_update).unwrap().as_secs() < 60 {
-            return;
-        }
-    }
-
-    let cloud = env::var("CLOUD_SERVER");
-    if cloud.is_ok() {
-        let presence = format!("to {num_servers} instances");
-        ctx.set_presence(
-            Some(ActivityData::streaming(presence, "https://octoprint.org").unwrap()),
-            OnlineStatus::Online,
-        );
-    }
-
-    *last_presense_update.write().await = now;
-}
-
 async fn sender(stx: &mut (impl AsyncWriteExt + Unpin), mut rx: UnboundedReceiver<Request>) -> eyre::Result<()> {
     loop {
         let message = rx.recv().await;
@@ -195,8 +170,8 @@ async fn handle_task(
         Some(messages::response::Field::Settings(new_settings)) => {
             *settings.config.channelid.write().await = ChannelId::from(new_settings.channel_id);
             *settings.config.prefix.write().await = new_settings.command_prefix;
-            *settings.config.cycle_time.write().await = new_settings.cycle_time;
-            *settings.config.enabled.write().await = new_settings.presence_enabled;
+            settings.config.cycle_time.store(new_settings.cycle_time, Relaxed);
+            settings.config.enabled.store(new_settings.presence_enabled, Relaxed);
             Ok(())
         }
     }
@@ -268,7 +243,6 @@ pub(crate) async fn send_stats(channel: ChannelId, ctx: Context, clients: Client
 async fn connection_handler(tcpstream: TcpStream,
                             ctx: Arc<Context>,
                             clients: ClientList,
-                            last_update_time: SharedSystemTime
                             ) -> eyre::Result<()>
 {
         let (tx, rx) = unbounded_channel();
@@ -285,8 +259,8 @@ async fn connection_handler(tcpstream: TcpStream,
             config: Config {
                 channelid: RwLock::new(ChannelId::default()),
                 prefix: RwLock::new(String::new()),
-                cycle_time: RwLock::new(0),
-                enabled: RwLock::new(false),
+                cycle_time: AtomicI32::new(0),
+                enabled: AtomicBool::new(false),
             },
             stats: Stats {
                 ip: peer_addr.to_string(),
@@ -297,17 +271,11 @@ async fn connection_handler(tcpstream: TcpStream,
 
         clients.write().await.insert(0, settings.clone());
 
-        let num_servers = clients.read().await.len();
-        update_presence(last_update_time.clone(), ctx.clone(), num_servers).await;
-
         connection_loop(tcpstream, rx, settings.clone(), ctx.clone()).await?;
 
         clients.write()
             .await
             .retain(|item| !Arc::<DiscordSettings>::ptr_eq(item, &settings));
-
-        let num_servers = clients.read().await.len();
-        update_presence(last_update_time.clone(), ctx.clone(), num_servers).await;
 
         info!("Dropped connection from: {}", peer_addr);
 
@@ -319,13 +287,11 @@ pub(crate) async fn run_server(ctx: Arc<Context>, clients: ClientList) {
     let listener = TcpListener::bind("0.0.0.0:23416")
         .await
         .expect("Failed to bind");
-    
-    let last_presense_update = Arc::new(RwLock::new(SystemTime::now()));
 
     loop {
         match listener.accept().await {
             Ok((tcpstream, _)) => {
-                tokio::spawn(connection_handler(tcpstream, ctx.clone(), clients.clone(), last_presense_update.clone()));
+                tokio::spawn(connection_handler(tcpstream, ctx.clone(), clients.clone()));
             }
             Err(_) => {
                 tracing::error!("Failed to accept")
