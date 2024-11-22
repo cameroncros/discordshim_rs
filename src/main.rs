@@ -42,7 +42,7 @@ impl EventHandler for Handler {
         }
 
         // Check for health check message.
-        if new_message.is_own(ctx.cache) {
+        if new_message.author == **ctx.cache.current_user() {  // Message is from ourselves.
             if new_message.channel_id == self.healthcheckchannel {
                 if new_message.embeds.len() != 1 {
                     return;
@@ -62,7 +62,7 @@ impl EventHandler for Handler {
             return;
         }
 
-        if new_message.is_private() {
+        if new_message.guild_id.is_none() {  // is_private()
             return;
         }
         // Process all other messages as normal.
