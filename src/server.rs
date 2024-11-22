@@ -80,9 +80,16 @@ impl Server {
                 let ctx2 = ctx.clone();
                 let clients2 = self.clients.clone();
                 async move {
-                    let f = ctx2.clone();
-                    let c = clients2.clone();
-                    let stream = tcpstream.unwrap();
+                    let stream = match tcpstream {
+                        Err(e) => {
+                            error!("TCP stream error {:?}", e);
+                            return;
+                        }
+                        Ok(s) => {
+                            s
+                        }
+                    };
+
                     let peer_addr = stream.peer_addr().unwrap();
                     info!("Received connection from: {}", peer_addr);
 
@@ -96,18 +103,18 @@ impl Server {
                         total_data: Mutex::new(0),
                     });
 
-                    c.lock().await.insert(0, settings.clone());
+                    clients2.lock().await.insert(0, settings.clone());
 
-                    let num_servers = c.lock().await.len();
+                    let num_servers = clients2.lock().await.len();
                     self.update_presence(ctx2.clone(), num_servers).await;
 
-                    let _loop_res = self.connection_loop(stream, settings.clone(), f).await;
-                    c.lock()
+                    let _loop_res = self.connection_loop(stream, settings.clone(), ctx2.clone()).await;
+                    clients2.lock()
                         .await
                         .retain(|item| !Arc::<DiscordSettings>::ptr_eq(item, &settings));
 
-                    let num_servers = c.lock().await.len();
-                    self.update_presence(ctx2.clone(), num_servers).await;
+                    let num_servers = clients2.lock().await.len();
+                    self.update_presence(ctx2, num_servers).await;
 
                     info!("Dropped connection from: {}", peer_addr);
                 }
