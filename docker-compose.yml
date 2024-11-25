@@ -1,6 +1,8 @@
 version: '3.7'
 services:
   discordshim:
+    logging:
+      driver: journald  # Optional, but required for fail2ban
     image: discordshim
     build: .
     ports:
