@@ -5,4 +5,4 @@ sudo cp discordshim.conf /etc/fail2ban/filter.d/
 
 sudo systemctl restart fail2ban
 
-sudo watch fail2ban-client status discordshim
+./check.sh
