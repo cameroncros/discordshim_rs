@@ -12,14 +12,14 @@ stages:
 
 test:
   stage: test
-  image: rust:buster
+  image: rust:bullseye
   script:
     - apt update && apt install -y cmake
     - cargo test
 
 lint:
   stage: test
-  image: rust:buster
+  image: rust:bullseye
   script:
     - apt update && apt install -y cmake
     - rustup component add clippy
