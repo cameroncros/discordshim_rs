@@ -72,7 +72,7 @@ pub(crate) fn build_embeds(embed_content: EmbedContent) -> Vec<EmbedContent> {
 }
 
 pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, CreateAttachment)> {
-    return if filedata.len() < DISCORD_MAX_ATTACHMENT_SIZE {
+    if filedata.len() < DISCORD_MAX_ATTACHMENT_SIZE {
         let mut attachments = vec![];
         let filename2 = filename.clone();
         attachments.push((
@@ -108,5 +108,5 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Crea
             ));
         }
         attachments
-    };
+    }
 }

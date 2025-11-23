@@ -62,6 +62,12 @@ pub struct Server {
     last_presense_update: Mutex<SystemTime>,
 }
 
+impl Default for Server {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Server {
     pub fn new() -> Server {
         Server {
@@ -259,9 +265,10 @@ impl Server {
     }
 
     pub async fn send_command(&self, channel: ChannelId, user: UserId, command: String) -> eyre::Result<()>{
-        let mut request = Request::default();
-        request.user = user.get();
-        request.message = Some(Command(command));
+        let request = Request {
+            user: user.get(),
+            message: Some(Command(command)),
+        };
         let data = request.encode_to_vec();
 
         self._send_data(channel, data).await
@@ -304,13 +311,11 @@ impl Server {
         let req_file = ProtoFile {
             data: file,
             filename,
-            ..Default::default()
         };
 
         let request = Request {
             user: user.get(),
             message: Some(File(req_file)),
-            ..Default::default()
         };
 
         let data = request.encode_to_vec();
