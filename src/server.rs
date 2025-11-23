@@ -1,26 +1,37 @@
-use crate::messages::response::Field;
-use crate::messages::{EmbedContent, ProtoFile, Request, Response};
-use crate::embedbuilder::{build_embeds, split_file};
-use async_std::io::{ReadExt, WriteExt};
-use async_std::net::TcpListener;
-use async_std::net::TcpStream;
-use async_std::sync::{Mutex, RwLock};
+use std::{borrow::Cow, env, sync::Arc, time::SystemTime};
+
+use async_std::{
+    io::{ReadExt, WriteExt},
+    net::{TcpListener, TcpStream},
+    sync::{Mutex, RwLock},
+};
 use byteorder::{ByteOrder, LittleEndian};
+use color_eyre::eyre;
 use csv::Writer;
 use futures::stream::StreamExt;
 use log::{debug, error, info};
-use regex::Regex;
-use serenity::client::Context;
-use serenity::model::id::{ChannelId, UserId};
-use serenity::model::prelude::OnlineStatus;
-use std::borrow::Cow;
-use std::env;
-use std::sync::Arc;
-use std::time::SystemTime;
-use color_eyre::eyre;
 use prost::Message;
-use serenity::all::{ActivityData, CreateAttachment, CreateEmbed, CreateEmbedAuthor, CreateMessage};
-use crate::messages::request::Message::{Command, File};
+use regex::Regex;
+use serenity::{
+    all::{ActivityData, CreateAttachment, CreateEmbed, CreateEmbedAuthor, CreateMessage},
+    client::Context,
+    model::{
+        id::{ChannelId, UserId},
+        prelude::OnlineStatus,
+    },
+};
+
+use crate::{
+    embedbuilder::{build_embeds, split_file},
+    messages::{
+        EmbedContent,
+        ProtoFile,
+        Request,
+        Response,
+        request::Message::{Command, File},
+        response::Field,
+    },
+};
 
 #[derive(serde::Serialize)]
 struct Stats {
@@ -92,9 +103,7 @@ impl Server {
                             error!("TCP stream error {:?}", e);
                             return;
                         }
-                        Ok(s) => {
-                            s
-                        }
+                        Ok(s) => s,
                     };
 
                     let peer_addr = stream.peer_addr().unwrap();
@@ -115,8 +124,11 @@ impl Server {
                     let num_servers = clients2.lock().await.len();
                     self.update_presence(ctx2.clone(), num_servers).await;
 
-                    let _loop_res = self.connection_loop(stream, settings.clone(), ctx2.clone()).await;
-                    clients2.lock()
+                    let _loop_res = self
+                        .connection_loop(stream, settings.clone(), ctx2.clone())
+                        .await;
+                    clients2
+                        .lock()
                         .await
                         .retain(|item| !Arc::<DiscordSettings>::ptr_eq(item, &settings));
 
@@ -165,7 +177,8 @@ impl Server {
 
             let response = Response::decode(buf.as_slice())?;
 
-            self.handle_task(settings.clone(), response, ctx.clone()).await?;
+            self.handle_task(settings.clone(), response, ctx.clone())
+                .await?;
         }
     }
 
@@ -185,7 +198,8 @@ impl Server {
                 let files = split_file(filename, filedata);
                 for file in files {
                     let filename = file.1.filename.clone();
-                    let file_builder = CreateMessage::new().add_file(CreateAttachment::bytes(file.0, filename));
+                    let file_builder =
+                        CreateMessage::new().add_file(CreateAttachment::bytes(file.0, filename));
                     settings
                         .channel
                         .read()
@@ -205,11 +219,12 @@ impl Server {
                         let snapshot = e.snapshot.clone().unwrap();
                         let filename_url = format!("attachment://{}", snapshot.filename);
                         let filedata = snapshot.data.as_slice();
-                        let files = vec![CreateAttachment::bytes (
+                        let files = vec![CreateAttachment::bytes(
                             Cow::from(filedata),
                             snapshot.filename,
                         )];
-                        let mut embed = CreateEmbed::new().title(e.title)
+                        let mut embed = CreateEmbed::new()
+                            .title(e.title)
                             .description(e.description)
                             .color(e.color)
                             .author(CreateEmbedAuthor::new(e.author))
@@ -225,7 +240,8 @@ impl Server {
                             .send_files(&ctx, files, message)
                             .await?;
                     } else {
-                        let mut embed = CreateEmbed::new().title(e.title)
+                        let mut embed = CreateEmbed::new()
+                            .title(e.title)
                             .description(e.description)
                             .color(e.color)
                             .author(CreateEmbedAuthor::new(e.author));
@@ -233,7 +249,7 @@ impl Server {
                             embed = embed.field(field.title, field.text, field.inline);
                         }
                         let message = CreateMessage::new().embed(embed).content(mentions);
-                        
+
                         settings
                             .channel
                             .read()
@@ -264,7 +280,12 @@ impl Server {
         }
     }
 
-    pub async fn send_command(&self, channel: ChannelId, user: UserId, command: String) -> eyre::Result<()>{
+    pub async fn send_command(
+        &self,
+        channel: ChannelId,
+        user: UserId,
+        command: String,
+    ) -> eyre::Result<()> {
         let request = Request {
             user: user.get(),
             message: Some(Command(command)),
@@ -360,8 +381,7 @@ fn extract_mentions(e: &EmbedContent) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::messages::EmbedContent;
-    use crate::server::extract_mentions;
+    use crate::{messages::EmbedContent, server::extract_mentions};
 
     #[test]
     fn test_extract_mentions_empty() {

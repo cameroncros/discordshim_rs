@@ -1,18 +1,17 @@
-use async_std::sync::RwLock;
-use color_eyre::eyre;
-use color_eyre::eyre::eyre;
-use std::env;
-use std::sync::Arc;
-use tokio::task;
+use std::{env, sync::Arc};
 
+use async_std::sync::RwLock;
+use color_eyre::{eyre, eyre::eyre};
 use discordshim::server::Server;
-use poise::{async_trait, serenity_prelude as serenity, Framework};
-use serenity::all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Ready};
-use serenity::Client;
+use poise::{Framework, async_trait, serenity_prelude as serenity};
+use serenity::{
+    Client,
+    all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Ready},
+};
+use tokio::task;
 
 struct Data {} // User data, which is stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
-
 
 struct Handler {
     healthcheckchannel: ChannelId,
@@ -32,7 +31,8 @@ impl EventHandler for Handler {
         }
 
         // Check for health check message.
-        if new_message.author == **ctx.cache.current_user() {  // Message is from ourselves.
+        if new_message.author == **ctx.cache.current_user() {
+            // Message is from ourselves.
             if new_message.channel_id == self.healthcheckchannel {
                 if new_message.embeds.len() != 1 {
                     return;
@@ -42,7 +42,8 @@ impl EventHandler for Handler {
                     return;
                 }
                 let flag = embed1.title.as_ref().unwrap().clone();
-                let _ = self.server
+                let _ = self
+                    .server
                     .read()
                     .await
                     .send_command(new_message.channel_id, new_message.author.id, flag)
@@ -52,11 +53,13 @@ impl EventHandler for Handler {
             return;
         }
 
-        if new_message.guild_id.is_none() {  // is_private()
+        if new_message.guild_id.is_none() {
+            // is_private()
             return;
         }
         // Process all other messages as normal.
-        let _ = self.server
+        let _ = self
+            .server
             .read()
             .await
             .send_command(
@@ -67,7 +70,8 @@ impl EventHandler for Handler {
             .await;
         for attachment in new_message.attachments {
             let filedata = attachment.download().await.unwrap();
-            let _ = self.server
+            let _ = self
+                .server
                 .read()
                 .await
                 .send_file(
@@ -97,7 +101,6 @@ async fn main() {
 
     serve().await.unwrap();
 }
-
 
 async fn serve() -> eyre::Result<()> {
     let framework: Framework<Data, Error> = Framework::builder()
@@ -132,7 +135,10 @@ async fn serve() -> eyre::Result<()> {
 
     // start listening for events by starting a single shard
     if let Err(why) = client.start().await {
-        return Err(eyre!("An error occurred while running the client: {:?}", why));
+        return Err(eyre!(
+            "An error occurred while running the client: {:?}",
+            why
+        ));
     }
     Ok(())
 }

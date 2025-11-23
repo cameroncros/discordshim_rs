@@ -1,17 +1,28 @@
 #[cfg(test)]
 mod tests {
-    use crate::messages::{EmbedContent, Settings, TextField};
-use crate::messages::Response;
-use crate::embedbuilder::{
-        build_embeds, split_file, DISCORD_MAX_AUTHOR, DISCORD_MAX_DESCRIPTION, DISCORD_MAX_FIELDS,
-        DISCORD_MAX_TITLE, DISCORD_MAX_VALUE, ONE_MEGABYTE,
+    use std::{
+        fs::File,
+        io::{Read, Write},
+        net::{Shutdown, TcpStream},
     };
+
     use byteorder::{ByteOrder, LittleEndian};
-    use std::fs::File;
-    use std::io::{Read, Write};
-    use std::net::{Shutdown, TcpStream};
     use prost::Message;
-    use crate::messages;
+
+    use crate::{
+        embedbuilder::{
+            DISCORD_MAX_AUTHOR,
+            DISCORD_MAX_DESCRIPTION,
+            DISCORD_MAX_FIELDS,
+            DISCORD_MAX_TITLE,
+            DISCORD_MAX_VALUE,
+            ONE_MEGABYTE,
+            build_embeds,
+            split_file,
+        },
+        messages,
+        messages::{EmbedContent, Response, Settings, TextField},
+    };
 
     static CHANNEL_ID: u64 = 467700763775205396;
 
@@ -41,7 +52,7 @@ use crate::embedbuilder::{
             filename: "filename.png".to_string(),
             ..Default::default()
         };
-        
+
         let filedata = match std::fs::read("test_data/test_pattern.png") {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -117,7 +128,6 @@ use crate::embedbuilder::{
                 ..Default::default()
             };
             discord_embed.textfield.insert(0, field);
-            
         }
         response.field = Some(messages::response::Field::Embed(discord_embed));
 

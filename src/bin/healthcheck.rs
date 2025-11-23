@@ -1,15 +1,18 @@
 use std::env;
 
-use async_std::io::ReadExt;
-use async_std::net::TcpStream;
+use async_std::{io::ReadExt, net::TcpStream};
 use byteorder::{ByteOrder, LittleEndian};
-use color_eyre::eyre;
-use color_eyre::eyre::eyre;
+use color_eyre::{eyre, eyre::eyre};
+use discordshim::messages::{
+    EmbedContent,
+    Request,
+    Response,
+    Settings,
+    request::Message::Command,
+    response::Field,
+};
 use futures::AsyncWriteExt;
 use prost::Message;
-use discordshim::messages::{EmbedContent, Request, Response, Settings};
-use discordshim::messages::request::Message::Command;
-use discordshim::messages::response::Field;
 
 #[tokio::main]
 pub async fn main() -> eyre::Result<()> {
@@ -22,12 +25,10 @@ pub async fn main() -> eyre::Result<()> {
     // Send settings
     {
         let response = Response {
-            field: Some(Field::Settings(
-                Settings {
-                    channel_id,
-                    ..Default::default()
-                }
-            )),
+            field: Some(Field::Settings(Settings {
+                channel_id,
+                ..Default::default()
+            })),
         };
 
         let bytes = response.encode_to_vec();
@@ -56,7 +57,9 @@ pub async fn main() -> eyre::Result<()> {
         client.read_exact(&mut buf).await?;
 
         let request = Request::decode(buf.as_slice())?;
-        if let Some(Command(command)) = request.message && command == flag {
+        if let Some(Command(command)) = request.message
+            && command == flag
+        {
             return Ok(()); // Success
         }
     }

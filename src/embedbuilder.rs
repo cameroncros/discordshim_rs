@@ -1,10 +1,12 @@
-use crate::messages::TextField;
-use crate::messages::EmbedContent;
-use std::borrow::Cow;
-use std::io::{Cursor, Write};
+use std::{
+    borrow::Cow,
+    io::{Cursor, Write},
+};
 
 use serenity::all::CreateAttachment;
 use zip::write::SimpleFileOptions;
+
+use crate::messages::{EmbedContent, TextField};
 
 pub const ONE_MEGABYTE: usize = 1024 * 1024;
 pub const DISCORD_MAX_ATTACHMENT_SIZE: usize = 5 * ONE_MEGABYTE;
@@ -77,10 +79,7 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Crea
         let filename2 = filename.clone();
         attachments.push((
             filename,
-            CreateAttachment::bytes(
-                Cow::from(filedata),
-                filename2,
-            )
+            CreateAttachment::bytes(Cow::from(filedata), filename2),
         ));
         attachments
     } else {
@@ -88,9 +87,9 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Crea
         let bytes = Vec::new();
         let zipfile = Cursor::new(bytes);
         let mut zip = zip::ZipWriter::new(zipfile);
-        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        zip.start_file(filename.clone(), options)
-            .unwrap();
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file(filename.clone(), options).unwrap();
         zip.write_all(filedata).unwrap();
         let zipdata = zip.finish().unwrap().into_inner();
 
@@ -101,10 +100,7 @@ pub(crate) fn split_file(filename: String, filedata: &[u8]) -> Vec<(String, Crea
             data.copy_from_slice(chunk);
             attachments.push((
                 zipfilename.clone(),
-                CreateAttachment::bytes(
-                    Cow::from(data),
-                    zipfilename
-                )
+                CreateAttachment::bytes(Cow::from(data), zipfilename),
             ));
         }
         attachments
