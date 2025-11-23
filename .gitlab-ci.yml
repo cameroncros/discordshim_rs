@@ -14,14 +14,14 @@ test:
   stage: test
   image: rust:bullseye
   script:
-    - apt update && apt install -y cmake
+    - apt update && apt install -y cmake protobuf-compiler
     - cargo test
 
 lint:
   stage: test
   image: rust:bullseye
   script:
-    - apt update && apt install -y cmake
+    - apt update && apt install -y cmake protobuf-compiler
     - rustup component add clippy
     - cargo clippy
 
