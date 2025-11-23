@@ -1,6 +1,6 @@
+use crate::messages::response::Field;
+use crate::messages::{EmbedContent, ProtoFile, Request, Response};
 use crate::embedbuilder::{build_embeds, split_file};
-use crate::messages;
-use crate::messages::EmbedContent;
 use async_std::io::{ReadExt, WriteExt};
 use async_std::net::TcpListener;
 use async_std::net::TcpStream;
@@ -9,7 +9,6 @@ use byteorder::{ByteOrder, LittleEndian};
 use csv::Writer;
 use futures::stream::StreamExt;
 use log::{debug, error, info};
-use protobuf::Message;
 use regex::Regex;
 use serenity::client::Context;
 use serenity::model::id::{ChannelId, UserId};
@@ -19,13 +18,15 @@ use std::env;
 use std::sync::Arc;
 use std::time::SystemTime;
 use color_eyre::eyre;
+use prost::Message;
 use serenity::all::{ActivityData, CreateAttachment, CreateEmbed, CreateEmbedAuthor, CreateMessage};
+use crate::messages::request::Message::{Command, File};
 
 #[derive(serde::Serialize)]
 struct Stats {
     ip: String,
     num_messages: u64,
-    total_data: u64,
+    total_data: usize,
 }
 
 struct DiscordSettings {
@@ -36,7 +37,7 @@ struct DiscordSettings {
     cycle_time: Mutex<i32>,
     enabled: Mutex<bool>,
     num_messages: Mutex<u64>,
-    total_data: Mutex<u64>,
+    total_data: Mutex<usize>,
 }
 
 impl DiscordSettings {
@@ -56,20 +57,20 @@ impl DiscordSettings {
     }
 }
 
-pub(crate) struct Server {
+pub struct Server {
     clients: Arc<Mutex<Vec<Arc<DiscordSettings>>>>,
     last_presense_update: Mutex<SystemTime>,
 }
 
 impl Server {
-    pub(crate) fn new() -> Server {
+    pub fn new() -> Server {
         Server {
             clients: Arc::new(Mutex::new(Vec::new())),
             last_presense_update: Mutex::new(SystemTime::UNIX_EPOCH),
         }
     }
 
-    pub(crate) async fn run(&self, ctx: Arc<Context>) {
+    pub async fn run(&self, ctx: Arc<Context>) {
         debug!("Starting TCP listener");
         let listener = TcpListener::bind("0.0.0.0:23416")
             .await
@@ -156,7 +157,7 @@ impl Server {
             let mut buf = vec![0u8; length];
             stream.read_exact(&mut buf).await?;
 
-            let response = messages::Response::parse_from_bytes(buf.as_slice())?;
+            let response = Response::decode(buf.as_slice())?;
 
             self.handle_task(settings.clone(), response, ctx.clone()).await?;
         }
@@ -165,14 +166,14 @@ impl Server {
     async fn handle_task(
         &self,
         settings: Arc<DiscordSettings>,
-        response: messages::Response,
+        response: Response,
         ctx: Arc<Context>,
     ) -> eyre::Result<()> {
         *settings.num_messages.lock().await += 1;
-        *settings.total_data.lock().await += response.compute_size();
+        *settings.total_data.lock().await += response.encoded_len();
         match response.field {
             None => Ok(()),
-            Some(messages::response::Field::File(protofile)) => {
+            Some(Field::File(protofile)) => {
                 let filename = protofile.filename.clone();
                 let filedata = protofile.data.as_slice();
                 let files = split_file(filename, filedata);
@@ -189,7 +190,7 @@ impl Server {
                 Ok(())
             }
 
-            Some(messages::response::Field::Embed(response_embed)) => {
+            Some(Field::Embed(response_embed)) => {
                 let embeds = build_embeds(response_embed);
                 for e in embeds {
                     let mentions = extract_mentions(&e);
@@ -238,7 +239,7 @@ impl Server {
                 Ok(())
             }
 
-            Some(messages::response::Field::Presence(presence)) => {
+            Some(Field::Presence(presence)) => {
                 let cloud = env::var("CLOUD_SERVER");
                 if cloud.is_err() {
                     let activity = ActivityData::playing(presence.presence);
@@ -247,7 +248,7 @@ impl Server {
                 Ok(())
             }
 
-            Some(messages::response::Field::Settings(new_settings)) => {
+            Some(Field::Settings(new_settings)) => {
                 *settings.channel.write().await = ChannelId::from(new_settings.channel_id);
                 *settings.prefix.lock().await = new_settings.command_prefix;
                 *settings.cycle_time.lock().await = new_settings.cycle_time;
@@ -257,11 +258,11 @@ impl Server {
         }
     }
 
-    pub(crate) async fn send_command(&self, channel: ChannelId, user: UserId, command: String) -> eyre::Result<()>{
-        let mut request = messages::Request::default();
+    pub async fn send_command(&self, channel: ChannelId, user: UserId, command: String) -> eyre::Result<()>{
+        let mut request = Request::default();
         request.user = user.get();
-        request.message = Some(messages::request::Message::Command(command));
-        let data = request.write_to_bytes().unwrap();
+        request.message = Some(Command(command));
+        let data = request.encode_to_vec();
 
         self._send_data(channel, data).await
     }
@@ -293,31 +294,31 @@ impl Server {
         Ok(())
     }
 
-    pub(crate) async fn send_file(
+    pub async fn send_file(
         &self,
         channel: ChannelId,
         user: UserId,
         filename: String,
         file: Vec<u8>,
     ) -> eyre::Result<()> {
-        let req_file = messages::ProtoFile {
+        let req_file = ProtoFile {
             data: file,
             filename,
             ..Default::default()
         };
 
-        let request = messages::Request {
+        let request = Request {
             user: user.get(),
-            message: Some(messages::request::Message::File(req_file)),
+            message: Some(File(req_file)),
             ..Default::default()
         };
 
-        let data = request.write_to_bytes().unwrap();
+        let data = request.encode_to_vec();
 
         self._send_data(channel, data).await
     }
 
-    pub(crate) async fn send_stats(&self, channel: ChannelId, ctx: Context) {
+    pub async fn send_stats(&self, channel: ChannelId, ctx: Context) {
         let mut wtr = Writer::from_writer(vec![]);
         let c = self.clients.lock().await;
         for client in c.as_slice() {
@@ -359,14 +360,14 @@ mod tests {
 
     #[test]
     fn test_extract_mentions_empty() {
-        let e = EmbedContent::new();
+        let e = EmbedContent::default();
         let mentions = extract_mentions(&e);
         assert_eq!("", mentions);
     }
 
     #[test]
     fn test_extract_mentions_title() {
-        let mut e = EmbedContent::new();
+        let mut e = EmbedContent::default();
         e.title = "<@12345678910> <@Everyone>".to_string();
         let mentions = extract_mentions(&e);
         assert_eq!("<@12345678910> <@Everyone> ", mentions);
@@ -374,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_extract_mentions_description() {
-        let mut e = EmbedContent::new();
+        let mut e = EmbedContent::default();
         e.description = "<@12345678910> <@Everyone>".to_string();
         let mentions = extract_mentions(&e);
         assert_eq!("<@12345678910> <@Everyone> ", mentions);

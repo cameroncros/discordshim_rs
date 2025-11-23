@@ -1,21 +1,22 @@
 #[cfg(test)]
 mod tests {
-    use crate::embedbuilder::{
+    use crate::messages::{EmbedContent, Settings, TextField};
+use crate::messages::Response;
+use crate::embedbuilder::{
         build_embeds, split_file, DISCORD_MAX_AUTHOR, DISCORD_MAX_DESCRIPTION, DISCORD_MAX_FIELDS,
         DISCORD_MAX_TITLE, DISCORD_MAX_VALUE, ONE_MEGABYTE,
     };
-    use crate::messages;
-    use crate::messages::{EmbedContent, Response, Settings, TextField};
     use byteorder::{ByteOrder, LittleEndian};
-    use protobuf::{Message, MessageField};
     use std::fs::File;
     use std::io::{Read, Write};
     use std::net::{Shutdown, TcpStream};
+    use prost::Message;
+    use crate::messages;
 
     static CHANNEL_ID: u64 = 467700763775205396;
 
     fn send_message(stream: &mut TcpStream, response: &mut Response) {
-        let msg = response.write_to_bytes().unwrap();
+        let msg = response.encode_to_vec();
         let length = msg.len() as u32;
         let length_buf = &mut [0u8; 4];
         LittleEndian::write_u32(length_buf, length);
@@ -32,7 +33,7 @@ mod tests {
         let mut buf = vec![0u8; length as usize];
         stream.read_exact(&mut buf).unwrap();
 
-        return messages::Request::parse_from_bytes(buf.as_slice()).unwrap();
+        return messages::Request::decode(buf.as_slice()).unwrap();
     }
 
     fn get_snapshot() -> messages::ProtoFile {
@@ -107,7 +108,7 @@ mod tests {
             ..Default::default()
         };
         let snapshot = get_snapshot();
-        discord_embed.snapshot = MessageField::some(snapshot);
+        discord_embed.snapshot = Some(snapshot);
         for i in 0..50 {
             let field = TextField {
                 title: i.to_string(),
@@ -199,7 +200,6 @@ mod tests {
             title: str::repeat("d", DISCORD_MAX_TITLE),
             text: str::repeat("e", DISCORD_MAX_VALUE),
             inline: false,
-            special_fields: Default::default(),
         }];
         let ec = EmbedContent {
             title: str::repeat("a", DISCORD_MAX_TITLE),
@@ -208,7 +208,6 @@ mod tests {
             color: 0,
             snapshot: Default::default(),
             textfield: textfields,
-            special_fields: Default::default(),
         };
 
         let embeds = build_embeds(ec);
@@ -223,7 +222,6 @@ mod tests {
                 title: str::repeat("d", DISCORD_MAX_TITLE),
                 text: str::repeat("e", DISCORD_MAX_VALUE),
                 inline: false,
-                special_fields: Default::default(),
             });
         }
         let ec = EmbedContent {
@@ -233,7 +231,6 @@ mod tests {
             color: 0,
             snapshot: Default::default(),
             textfield: textfields,
-            special_fields: Default::default(),
         };
 
         let embeds = build_embeds(ec.clone());

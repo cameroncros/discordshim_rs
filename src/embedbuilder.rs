@@ -1,11 +1,10 @@
+use crate::messages::TextField;
+use crate::messages::EmbedContent;
 use std::borrow::Cow;
 use std::io::{Cursor, Write};
 
 use serenity::all::CreateAttachment;
 use zip::write::SimpleFileOptions;
-
-use crate::messages;
-use crate::messages::TextField;
 
 pub const ONE_MEGABYTE: usize = 1024 * 1024;
 pub const DISCORD_MAX_ATTACHMENT_SIZE: usize = 5 * ONE_MEGABYTE;
@@ -25,9 +24,9 @@ fn truncate(string: String, length: usize) -> String {
     string
 }
 
-pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<messages::EmbedContent> {
+pub(crate) fn build_embeds(embed_content: EmbedContent) -> Vec<EmbedContent> {
     let mut embeds = vec![];
-    let mut first = messages::EmbedContent::default();
+    let mut first = EmbedContent::default();
     let mut total_chars;
     first.title = truncate(embed_content.title, DISCORD_MAX_TITLE);
     first.description = if !embed_content.description.is_empty() {
@@ -57,7 +56,7 @@ pub(crate) fn build_embeds(embed_content: messages::EmbedContent) -> Vec<message
         let next_size = total_chars + trimmed_field.title.len() + trimmed_field.text.len();
         if last.textfield.len() >= DISCORD_MAX_FIELDS || next_size > DISCORD_MAX_EMBED_TOTAL {
             embeds.push(last);
-            last = messages::EmbedContent::default();
+            last = EmbedContent::default();
             last.description = "\u{200b}".to_string();
             last.author.clone_from(&author);
             last.color = embed_content.color;

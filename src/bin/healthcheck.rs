@@ -6,11 +6,13 @@ use byteorder::{ByteOrder, LittleEndian};
 use color_eyre::eyre;
 use color_eyre::eyre::eyre;
 use futures::AsyncWriteExt;
-use protobuf::Message;
+use prost::Message;
+use discordshim::messages::{EmbedContent, Request, Response, Settings};
+use discordshim::messages::request::Message::Command;
+use discordshim::messages::response::Field;
 
-use crate::messages;
-
-pub async fn healthcheck() -> eyre::Result<()> {
+#[tokio::main]
+pub async fn main() -> eyre::Result<()> {
     let mut client = TcpStream::connect("127.0.0.1:23416").await.unwrap();
     let channel_id: u64 = env::var("HEALTH_CHECK_CHANNEL_ID")
         .expect("channel id")
@@ -19,27 +21,28 @@ pub async fn healthcheck() -> eyre::Result<()> {
 
     // Send settings
     {
-        let mut response = messages::Response::new();
-        let mut settings = messages::Settings {
-            channel_id,
-            ..Default::default()
+        let response = Response {
+            field: Some(Field::Settings(
+                Settings {
+                    channel_id,
+                    ..Default::default()
+                }
+            )),
         };
-        settings.channel_id = channel_id;
-        response.set_settings(settings);
 
-        let bytes = response.write_to_bytes()?;
+        let bytes = response.encode_to_vec();
         send_data(&mut client, bytes).await?;
     }
     // Send flag
     {
-        let mut response = messages::Response::new();
-        let message = messages::EmbedContent {
-            title: flag.clone(),
-            ..Default::default()
+        let response = Response {
+            field: Some(Field::Embed(EmbedContent {
+                title: flag.clone(),
+                ..Default::default()
+            })),
         };
-        response.set_embed(message);
 
-        let bytes = response.write_to_bytes()?;
+        let bytes = response.encode_to_vec();
         send_data(&mut client, bytes).await?;
     }
 
@@ -52,8 +55,8 @@ pub async fn healthcheck() -> eyre::Result<()> {
         let mut buf = vec![0u8; length];
         client.read_exact(&mut buf).await?;
 
-        let request = messages::Request::parse_from_bytes(buf.as_slice())?;
-        if request.command() == flag {
+        let request = Request::decode(buf.as_slice())?;
+        if let Some(Command(command)) = request.message && command == flag {
             return Ok(()); // Success
         }
     }

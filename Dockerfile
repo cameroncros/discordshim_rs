@@ -16,6 +16,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 # Build application
 COPY . .
 RUN cargo build --release --bin discordshim
+RUN cargo build --release --bin healthcheck
 
 
 # We do not need the Rust toolchain to run the binary!
@@ -23,5 +24,6 @@ FROM ubuntu:latest AS runtime
 WORKDIR app
 COPY --from=builder /usr/local/cargo/bin/tokio-console /usr/bin
 COPY --from=builder /app/target/release/discordshim /usr/bin
-ENTRYPOINT ["/usr/bin/discordshim", "serve"]
+COPY --from=builder /app/target/release/healthcheck /usr/bin
+ENTRYPOINT ["/usr/bin/discordshim"]
 HEALTHCHECK CMD netstat -an | grep 23416 > /dev/null; if [ 0 != $? ]; then exit 1; fi;

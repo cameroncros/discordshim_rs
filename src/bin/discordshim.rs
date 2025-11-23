@@ -1,22 +1,12 @@
-mod embedbuilder;
-mod healthcheck;
-mod messages;
-mod server;
-mod test;
-
-use color_eyre::eyre;
 use async_std::sync::RwLock;
-use log::error;
+use color_eyre::eyre;
+use color_eyre::eyre::eyre;
 use std::env;
 use std::sync::Arc;
-use color_eyre::eyre::eyre;
-
-use crate::server::Server;
-
-use crate::healthcheck::healthcheck;
 use tokio::task;
 
-use poise::{async_trait, Framework, serenity_prelude as serenity};
+use discordshim::server::Server;
+use poise::{async_trait, serenity_prelude as serenity, Framework};
 use serenity::all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Ready};
 use serenity::Client;
 
@@ -105,20 +95,7 @@ async fn main() {
     pretty_env_logger::init_timed();
     console_subscriber::init();
 
-    for argument in env::args() {
-        let result = match argument.to_lowercase().as_str() {
-            "serve" => {
-                serve().await
-            }
-            "healthcheck" => {
-                healthcheck().await
-            }
-            &_ => {Ok(())}
-        };
-        result.unwrap();  // deliberately panic if we failed.
-
-    }
-    error!("Usage: TODO");
+    serve().await.unwrap();
 }
 
 
