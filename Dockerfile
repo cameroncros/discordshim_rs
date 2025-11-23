@@ -1,29 +1,20 @@
 # Leveraging the pre-built Docker images with
 # cargo-chef and the Rust toolchain
-FROM lukemathwalker/cargo-chef:latest AS chef
-WORKDIR app
-
-FROM chef AS planner
-COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
-
-FROM chef AS builder
-COPY --from=planner /app/recipe.json recipe.json
+FROM rust:1-trixie AS builder
 # Build dependencies - this is the caching Docker layer!
-RUN apt update && apt install cmake -y
+RUN apt update && apt install cmake protobuf-compiler -y
 RUN cargo install --locked tokio-console
-RUN cargo chef cook --release --recipe-path recipe.json
 # Build application
-COPY . .
+WORKDIR /build
+COPY . /build
 RUN cargo build --release --bin discordshim
 RUN cargo build --release --bin healthcheck
 
 
 # We do not need the Rust toolchain to run the binary!
 FROM ubuntu:latest AS runtime
-WORKDIR app
 COPY --from=builder /usr/local/cargo/bin/tokio-console /usr/bin
-COPY --from=builder /app/target/release/discordshim /usr/bin
-COPY --from=builder /app/target/release/healthcheck /usr/bin
+COPY --from=builder /build/target/release/discordshim /usr/bin
+COPY --from=builder /build/target/release/healthcheck /usr/bin
 ENTRYPOINT ["/usr/bin/discordshim"]
 HEALTHCHECK CMD netstat -an | grep 23416 > /dev/null; if [ 0 != $? ]; then exit 1; fi;
