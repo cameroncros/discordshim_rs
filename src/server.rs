@@ -1,31 +1,43 @@
-use crate::embedbuilder::{build_embeds, split_file};
-use crate::messages;
-use crate::messages::EmbedContent;
-use async_std::io::{ReadExt, WriteExt};
-use async_std::net::TcpListener;
-use async_std::net::TcpStream;
-use async_std::sync::{Mutex, RwLock};
+use std::{borrow::Cow, env, sync::Arc, time::SystemTime};
+
+use async_std::{
+    io::{ReadExt, WriteExt},
+    net::{TcpListener, TcpStream},
+    sync::{Mutex, RwLock},
+};
 use byteorder::{ByteOrder, LittleEndian};
+use color_eyre::eyre;
 use csv::Writer;
 use futures::stream::StreamExt;
 use log::{debug, error, info};
-use protobuf::Message;
+use prost::Message;
 use regex::Regex;
-use serenity::client::Context;
-use serenity::model::id::{ChannelId, UserId};
-use serenity::model::prelude::OnlineStatus;
-use std::borrow::Cow;
-use std::env;
-use std::sync::Arc;
-use std::time::SystemTime;
-use color_eyre::eyre;
-use serenity::all::{ActivityData, CreateAttachment, CreateEmbed, CreateEmbedAuthor, CreateMessage};
+use serenity::{
+    all::{ActivityData, CreateAttachment, CreateEmbed, CreateEmbedAuthor, CreateMessage},
+    client::Context,
+    model::{
+        id::{ChannelId, UserId},
+        prelude::OnlineStatus,
+    },
+};
+
+use crate::{
+    embedbuilder::{build_embeds, split_file},
+    messages::{
+        EmbedContent,
+        ProtoFile,
+        Request,
+        Response,
+        request::Message::{Command, File},
+        response::Field,
+    },
+};
 
 #[derive(serde::Serialize)]
 struct Stats {
     ip: String,
     num_messages: u64,
-    total_data: u64,
+    total_data: usize,
 }
 
 struct DiscordSettings {
@@ -36,7 +48,7 @@ struct DiscordSettings {
     cycle_time: Mutex<i32>,
     enabled: Mutex<bool>,
     num_messages: Mutex<u64>,
-    total_data: Mutex<u64>,
+    total_data: Mutex<usize>,
 }
 
 impl DiscordSettings {
@@ -56,20 +68,26 @@ impl DiscordSettings {
     }
 }
 
-pub(crate) struct Server {
+pub struct Server {
     clients: Arc<Mutex<Vec<Arc<DiscordSettings>>>>,
     last_presense_update: Mutex<SystemTime>,
 }
 
+impl Default for Server {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Server {
-    pub(crate) fn new() -> Server {
+    pub fn new() -> Server {
         Server {
             clients: Arc::new(Mutex::new(Vec::new())),
             last_presense_update: Mutex::new(SystemTime::UNIX_EPOCH),
         }
     }
 
-    pub(crate) async fn run(&self, ctx: Arc<Context>) {
+    pub async fn run(&self, ctx: Arc<Context>) {
         debug!("Starting TCP listener");
         let listener = TcpListener::bind("0.0.0.0:23416")
             .await
@@ -85,9 +103,7 @@ impl Server {
                             error!("TCP stream error {:?}", e);
                             return;
                         }
-                        Ok(s) => {
-                            s
-                        }
+                        Ok(s) => s,
                     };
 
                     let peer_addr = stream.peer_addr().unwrap();
@@ -108,8 +124,11 @@ impl Server {
                     let num_servers = clients2.lock().await.len();
                     self.update_presence(ctx2.clone(), num_servers).await;
 
-                    let _loop_res = self.connection_loop(stream, settings.clone(), ctx2.clone()).await;
-                    clients2.lock()
+                    let _loop_res = self
+                        .connection_loop(stream, settings.clone(), ctx2.clone())
+                        .await;
+                    clients2
+                        .lock()
                         .await
                         .retain(|item| !Arc::<DiscordSettings>::ptr_eq(item, &settings));
 
@@ -156,29 +175,31 @@ impl Server {
             let mut buf = vec![0u8; length];
             stream.read_exact(&mut buf).await?;
 
-            let response = messages::Response::parse_from_bytes(buf.as_slice())?;
+            let response = Response::decode(buf.as_slice())?;
 
-            self.handle_task(settings.clone(), response, ctx.clone()).await?;
+            self.handle_task(settings.clone(), response, ctx.clone())
+                .await?;
         }
     }
 
     async fn handle_task(
         &self,
         settings: Arc<DiscordSettings>,
-        response: messages::Response,
+        response: Response,
         ctx: Arc<Context>,
     ) -> eyre::Result<()> {
         *settings.num_messages.lock().await += 1;
-        *settings.total_data.lock().await += response.compute_size();
+        *settings.total_data.lock().await += response.encoded_len();
         match response.field {
             None => Ok(()),
-            Some(messages::response::Field::File(protofile)) => {
+            Some(Field::File(protofile)) => {
                 let filename = protofile.filename.clone();
                 let filedata = protofile.data.as_slice();
                 let files = split_file(filename, filedata);
                 for file in files {
                     let filename = file.1.filename.clone();
-                    let file_builder = CreateMessage::new().add_file(CreateAttachment::bytes(file.0, filename));
+                    let file_builder =
+                        CreateMessage::new().add_file(CreateAttachment::bytes(file.0, filename));
                     settings
                         .channel
                         .read()
@@ -189,7 +210,7 @@ impl Server {
                 Ok(())
             }
 
-            Some(messages::response::Field::Embed(response_embed)) => {
+            Some(Field::Embed(response_embed)) => {
                 let embeds = build_embeds(response_embed);
                 for e in embeds {
                     let mentions = extract_mentions(&e);
@@ -198,11 +219,12 @@ impl Server {
                         let snapshot = e.snapshot.clone().unwrap();
                         let filename_url = format!("attachment://{}", snapshot.filename);
                         let filedata = snapshot.data.as_slice();
-                        let files = vec![CreateAttachment::bytes (
+                        let files = vec![CreateAttachment::bytes(
                             Cow::from(filedata),
                             snapshot.filename,
                         )];
-                        let mut embed = CreateEmbed::new().title(e.title)
+                        let mut embed = CreateEmbed::new()
+                            .title(e.title)
                             .description(e.description)
                             .color(e.color)
                             .author(CreateEmbedAuthor::new(e.author))
@@ -218,7 +240,8 @@ impl Server {
                             .send_files(&ctx, files, message)
                             .await?;
                     } else {
-                        let mut embed = CreateEmbed::new().title(e.title)
+                        let mut embed = CreateEmbed::new()
+                            .title(e.title)
                             .description(e.description)
                             .color(e.color)
                             .author(CreateEmbedAuthor::new(e.author));
@@ -226,7 +249,7 @@ impl Server {
                             embed = embed.field(field.title, field.text, field.inline);
                         }
                         let message = CreateMessage::new().embed(embed).content(mentions);
-                        
+
                         settings
                             .channel
                             .read()
@@ -238,7 +261,7 @@ impl Server {
                 Ok(())
             }
 
-            Some(messages::response::Field::Presence(presence)) => {
+            Some(Field::Presence(presence)) => {
                 let cloud = env::var("CLOUD_SERVER");
                 if cloud.is_err() {
                     let activity = ActivityData::playing(presence.presence);
@@ -247,7 +270,7 @@ impl Server {
                 Ok(())
             }
 
-            Some(messages::response::Field::Settings(new_settings)) => {
+            Some(Field::Settings(new_settings)) => {
                 *settings.channel.write().await = ChannelId::from(new_settings.channel_id);
                 *settings.prefix.lock().await = new_settings.command_prefix;
                 *settings.cycle_time.lock().await = new_settings.cycle_time;
@@ -257,11 +280,17 @@ impl Server {
         }
     }
 
-    pub(crate) async fn send_command(&self, channel: ChannelId, user: UserId, command: String) -> eyre::Result<()>{
-        let mut request = messages::Request::default();
-        request.user = user.get();
-        request.message = Some(messages::request::Message::Command(command));
-        let data = request.write_to_bytes().unwrap();
+    pub async fn send_command(
+        &self,
+        channel: ChannelId,
+        user: UserId,
+        command: String,
+    ) -> eyre::Result<()> {
+        let request = Request {
+            user: user.get(),
+            message: Some(Command(command)),
+        };
+        let data = request.encode_to_vec();
 
         self._send_data(channel, data).await
     }
@@ -293,31 +322,29 @@ impl Server {
         Ok(())
     }
 
-    pub(crate) async fn send_file(
+    pub async fn send_file(
         &self,
         channel: ChannelId,
         user: UserId,
         filename: String,
         file: Vec<u8>,
     ) -> eyre::Result<()> {
-        let req_file = messages::ProtoFile {
+        let req_file = ProtoFile {
             data: file,
             filename,
-            ..Default::default()
         };
 
-        let request = messages::Request {
+        let request = Request {
             user: user.get(),
-            message: Some(messages::request::Message::File(req_file)),
-            ..Default::default()
+            message: Some(File(req_file)),
         };
 
-        let data = request.write_to_bytes().unwrap();
+        let data = request.encode_to_vec();
 
         self._send_data(channel, data).await
     }
 
-    pub(crate) async fn send_stats(&self, channel: ChannelId, ctx: Context) {
+    pub async fn send_stats(&self, channel: ChannelId, ctx: Context) {
         let mut wtr = Writer::from_writer(vec![]);
         let c = self.clients.lock().await;
         for client in c.as_slice() {
@@ -354,19 +381,18 @@ fn extract_mentions(e: &EmbedContent) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::messages::EmbedContent;
-    use crate::server::extract_mentions;
+    use crate::{messages::EmbedContent, server::extract_mentions};
 
     #[test]
     fn test_extract_mentions_empty() {
-        let e = EmbedContent::new();
+        let e = EmbedContent::default();
         let mentions = extract_mentions(&e);
         assert_eq!("", mentions);
     }
 
     #[test]
     fn test_extract_mentions_title() {
-        let mut e = EmbedContent::new();
+        let mut e = EmbedContent::default();
         e.title = "<@12345678910> <@Everyone>".to_string();
         let mentions = extract_mentions(&e);
         assert_eq!("<@12345678910> <@Everyone> ", mentions);
@@ -374,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_extract_mentions_description() {
-        let mut e = EmbedContent::new();
+        let mut e = EmbedContent::default();
         e.description = "<@12345678910> <@Everyone>".to_string();
         let mentions = extract_mentions(&e);
         assert_eq!("<@12345678910> <@Everyone> ", mentions);
