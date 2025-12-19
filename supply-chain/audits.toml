@@ -1,0 +1,8 @@
+
+# cargo-vet audits file
+
+[[audits.inout]]
+who = "Cameron Cross <cameroncros@gmail.com>"
+criteria = "safe-to-deploy"
+version = "0.1.4"
+notes = "Diff to previous version is innocuous"
