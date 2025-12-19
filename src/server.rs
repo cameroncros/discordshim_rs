@@ -1,5 +1,5 @@
 use std::{borrow::Cow, env, sync::Arc, time::SystemTime};
-
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
 use async_std::{
     io::{ReadExt, WriteExt},
     net::{TcpListener, TcpStream},
@@ -45,10 +45,10 @@ struct DiscordSettings {
     channel: RwLock<ChannelId>,
     // Only relevant when self-hosting, global discordshim won't support presence anyway
     prefix: Mutex<String>,
-    cycle_time: Mutex<i32>,
-    enabled: Mutex<bool>,
-    num_messages: Mutex<u64>,
-    total_data: Mutex<usize>,
+    cycle_time: AtomicI32,
+    enabled: AtomicBool,
+    num_messages: AtomicU64,
+    total_data: AtomicUsize,
 }
 
 impl DiscordSettings {
@@ -62,8 +62,8 @@ impl DiscordSettings {
                 .unwrap()
                 .to_string()
                 .clone(),
-            num_messages: *self.num_messages.lock().await,
-            total_data: *self.total_data.lock().await,
+            num_messages: self.num_messages.load(std::sync::atomic::Ordering::Relaxed),
+            total_data: self.total_data.load(std::sync::atomic::Ordering::Relaxed),
         }
     }
 }
@@ -113,10 +113,10 @@ impl Server {
                         tcpstream: RwLock::new(stream.clone()),
                         channel: RwLock::new(ChannelId::default()),
                         prefix: Mutex::new(String::new()),
-                        cycle_time: Mutex::new(0),
-                        enabled: Mutex::new(false),
-                        num_messages: Mutex::new(0),
-                        total_data: Mutex::new(0),
+                        cycle_time: AtomicI32::new(0),
+                        enabled: AtomicBool::new(false),
+                        num_messages: AtomicU64::new(0),
+                        total_data: AtomicUsize::new(0),
                     });
 
                     clients2.lock().await.insert(0, settings.clone());
@@ -188,8 +188,8 @@ impl Server {
         response: Response,
         ctx: Arc<Context>,
     ) -> eyre::Result<()> {
-        *settings.num_messages.lock().await += 1;
-        *settings.total_data.lock().await += response.encoded_len();
+        settings.num_messages.fetch_add(1, Ordering::Relaxed);
+        settings.total_data.fetch_add(response.encoded_len(), Ordering::Relaxed);
         match response.field {
             None => Ok(()),
             Some(Field::File(protofile)) => {
@@ -273,8 +273,8 @@ impl Server {
             Some(Field::Settings(new_settings)) => {
                 *settings.channel.write().await = ChannelId::from(new_settings.channel_id);
                 *settings.prefix.lock().await = new_settings.command_prefix;
-                *settings.cycle_time.lock().await = new_settings.cycle_time;
-                *settings.enabled.lock().await = new_settings.presence_enabled;
+                settings.cycle_time.store(new_settings.cycle_time, Ordering::Relaxed);
+                settings.enabled.store(new_settings.presence_enabled, Ordering::Relaxed);
                 Ok(())
             }
         }
