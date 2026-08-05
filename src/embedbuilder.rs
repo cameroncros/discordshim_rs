@@ -2,8 +2,7 @@ use std::{
     borrow::Cow,
     io::{Cursor, Write},
 };
-
-use serenity::all::CreateAttachment;
+use poise::serenity_prelude::CreateAttachment;
 use zip::write::SimpleFileOptions;
 
 use crate::messages::{EmbedContent, TextField};
