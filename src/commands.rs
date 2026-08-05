@@ -6,19 +6,25 @@ macro_rules! make_getter0 {
     ($fn_name:ident) => {
         // The macro expands into a full function definition
         #[poise::command(slash_command, prefix_command)]
-        pub(crate) async fn $fn_name(
-            ctx: Context<'_>,
-        ) -> eyre::Result<()> {
-            let command = format!("/{}", stringify!($fn_name));
+        pub(crate) async fn $fn_name(ctx: Context<'_>) -> eyre::Result<()> {
+            let command = format!("{}", stringify!($fn_name));
             let data = ctx.data();
-            data
-                .server.read().await
-                .send_command(
-                    ctx.channel_id(),
-                    ctx.author().id,
-                    command,
-                )
+            match data
+                .server
+                .read()
                 .await
+                .send_command(ctx.channel_id(), ctx.author().id, command)
+                .await
+            {
+                Ok(_) => {
+                    let reply = ctx.say("ACK").await?;
+                    reply.delete(ctx).await?;
+                }
+                Err(e) => {
+                    ctx.say(format!("Failed to send command: {e:?}")).await?;
+                }
+            };
+            Ok(())
         }
     };
 }
@@ -31,19 +37,26 @@ macro_rules! make_getter {
             ctx: Context<'_>,
             $($arg_name: $arg_type),*
         ) -> eyre::Result<()> {
-            let mut command = format!("/{}", stringify!($fn_name));
+            let mut command = format!("{}", stringify!($fn_name));
             $(
                 command += &format!(" {}", $arg_name);
             )+
             let data = ctx.data();
-            data
+            match data
                 .server.read().await
                 .send_command(
                     ctx.channel_id(),
                     ctx.author().id,
                     command,
                 )
-                .await
+                .await {
+                Ok(_) => {
+                    let reply = ctx.say("ACK").await?;
+                    reply.delete(ctx).await?;
+                },
+                Err(e) => { ctx.say(format!("Failed to send command: {e:?}")).await?; }
+            };
+            Ok(())
         }
     };
 }

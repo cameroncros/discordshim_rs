@@ -11,14 +11,8 @@ mod tests {
 
     use crate::{
         embedbuilder::{
-            DISCORD_MAX_AUTHOR,
-            DISCORD_MAX_DESCRIPTION,
-            DISCORD_MAX_FIELDS,
-            DISCORD_MAX_TITLE,
-            DISCORD_MAX_VALUE,
-            ONE_MEGABYTE,
-            build_embeds,
-            split_file,
+            DISCORD_MAX_AUTHOR, DISCORD_MAX_DESCRIPTION, DISCORD_MAX_FIELDS, DISCORD_MAX_TITLE,
+            DISCORD_MAX_VALUE, ONE_MEGABYTE, build_embeds, split_file,
         },
         messages,
         messages::{EmbedContent, Response, Settings, TextField},

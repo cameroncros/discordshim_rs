@@ -4,12 +4,7 @@ use async_std::{io::ReadExt, net::TcpStream};
 use byteorder::{ByteOrder, LittleEndian};
 use color_eyre::{eyre, eyre::eyre};
 use discordshim::messages::{
-    EmbedContent,
-    Request,
-    Response,
-    Settings,
-    request::Message::Command,
-    response::Field,
+    EmbedContent, Request, Response, Settings, request::Message::Command, response::Field,
 };
 use futures::AsyncWriteExt;
 use prost::Message;

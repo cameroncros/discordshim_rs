@@ -1,12 +1,11 @@
-use std::env;
-use std::sync::Arc;
+use crate::commands::*;
+use crate::server::Server;
 use async_std::sync::RwLock;
 use color_eyre::eyre;
-use crate::commands::*;
-use poise::{
-    serenity_prelude as serenity};
+use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::{ChannelId, FullEvent};
-use crate::server::Server;
+use std::env;
+use std::sync::Arc;
 
 pub struct Data {
     pub healthcheckchannel: ChannelId,
@@ -29,30 +28,28 @@ pub async fn serve() -> eyre::Result<()> {
                 connect(),
                 disconnect(),
                 print(),
-files(),
-unzip(),
-abort(),
-snapshot(),
-status(),
-help(),
-pause(),
-resume(),
-timelapse(),
-mute(),
-unmute(),
-gcode(),
-getfile(),
-gettimelapse(),
-poweron(),
-poweroff(),
-powerstatus(),
-listsystemcommands(),
-systemcommand(),
+                files(),
+                unzip(),
+                abort(),
+                snapshot(),
+                status(),
+                help(),
+                pause(),
+                resume(),
+                timelapse(),
+                mute(),
+                unmute(),
+                gcode(),
+                getfile(),
+                gettimelapse(),
+                poweron(),
+                poweroff(),
+                powerstatus(),
+                listsystemcommands(),
+                systemcommand(),
             ],
             event_handler: |ctx, event, _framework, data| {
-                Box::pin(async move {
-                    event_handler(ctx, event, data).await
-                })
+                Box::pin(async move { event_handler(ctx, event, data).await })
             },
             ..Default::default()
         })
@@ -87,12 +84,13 @@ pub(crate) async fn event_handler(
     event: &FullEvent,
     data: &Data,
 ) -> eyre::Result<()> {
-    if let FullEvent::Ready { data_about_bot: _data_about_bot } = event {
+    if let FullEvent::Ready {
+        data_about_bot: _data_about_bot,
+    } = event
+    {
         let context = Arc::new(ctx.clone());
         tokio::spawn(run_server(context, data.server.clone()));
-    }
-    else if let FullEvent::Message { new_message } = event
-    {
+    } else if let FullEvent::Message { new_message } = event {
         if new_message.channel_id == data.healthcheckchannel && new_message.content == "/stats" {
             data.server
                 .read()
@@ -113,7 +111,8 @@ pub(crate) async fn event_handler(
                     return Ok(());
                 }
                 let flag = embed1.title.as_ref().unwrap().clone();
-                let _ = data.server
+                let _ = data
+                    .server
                     .read()
                     .await
                     .send_command(new_message.channel_id, new_message.author.id, flag)
@@ -128,7 +127,8 @@ pub(crate) async fn event_handler(
             return Ok(());
         }
         // Process all other messages as normal.
-        let _ = data.server
+        let _ = data
+            .server
             .read()
             .await
             .send_command(
@@ -139,7 +139,8 @@ pub(crate) async fn event_handler(
             .await;
         for attachment in &new_message.attachments {
             let filedata = attachment.download().await?;
-            let _ = data.server
+            let _ = data
+                .server
                 .read()
                 .await
                 .send_file(
