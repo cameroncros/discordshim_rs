@@ -3,7 +3,7 @@ services:
   discordshim:
     logging:
       driver: journald  # Optional, but required for fail2ban
-    image: discordshim
+    image: discordshim:${IMAGE_TAG}
     build: .
     ports:
       - "${EXTERNAL_PORT}:23416"
