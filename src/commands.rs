@@ -7,7 +7,7 @@ macro_rules! make_getter0 {
         // The macro expands into a full function definition
         #[poise::command(slash_command, prefix_command)]
         pub(crate) async fn $fn_name(ctx: Context<'_>) -> eyre::Result<()> {
-            let command = format!("{}", stringify!($fn_name));
+            let command = format!("/{}", stringify!($fn_name));
             let data = ctx.data();
             match data
                 .server
