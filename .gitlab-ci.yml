@@ -27,15 +27,15 @@ lint:
 
 dev_deploy:
   stage: dev
-  image: docker/compose:latest
+  image: docker:latest
   script:
     - |
       cat <<EOT >> .env
       BOT_TOKEN='$TEST_BOT_TOKEN'
       EXTERNAL_PORT=53416
       EOT
-    - COMPOSE_PROJECT_NAME=dev_discordshim docker-compose down || true
-    - COMPOSE_PROJECT_NAME=dev_discordshim docker-compose up --build -d
+    - COMPOSE_PROJECT_NAME=dev_discordshim docker compose down || true
+    - COMPOSE_PROJECT_NAME=dev_discordshim docker compose up --build -d
 
 test_dev_deploy:
   stage: dev
@@ -52,7 +52,7 @@ test_dev_deploy:
 live_deploy:
   tags: [prod]
   stage: live
-  image: docker/compose:latest
+  image: docker:latest
   dependencies:
     - test_dev_deploy
   rules:
@@ -63,8 +63,8 @@ live_deploy:
       BOT_TOKEN='$LIVE_BOT_TOKEN'
       EXTERNAL_PORT=23416
       EOT
-    - COMPOSE_PROJECT_NAME=prod_discordshim docker-compose down || true
-    - COMPOSE_PROJECT_NAME=prod_discordshim docker-compose up --build -d
+    - COMPOSE_PROJECT_NAME=prod_discordshim docker compose down || true
+    - COMPOSE_PROJECT_NAME=prod_discordshim docker compose up --build -d
 
 test_live_deploy:
   tags: [prod]
