@@ -1,5 +1,3 @@
-use std::{borrow::Cow, env, sync::Arc, time::SystemTime};
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
 use async_std::{
     io::{ReadExt, WriteExt},
     net::{TcpListener, TcpStream},
@@ -10,24 +8,19 @@ use color_eyre::eyre;
 use csv::Writer;
 use futures::stream::StreamExt;
 use log::{debug, error, info};
+use poise::serenity_prelude::{
+    ActivityData, ChannelId, Context, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
+    CreateMessage, OnlineStatus, UserId,
+};
 use prost::Message;
 use regex::Regex;
-use serenity::{
-    all::{ActivityData, CreateAttachment, CreateEmbed, CreateEmbedAuthor, CreateMessage},
-    client::Context,
-    model::{
-        id::{ChannelId, UserId},
-        prelude::OnlineStatus,
-    },
-};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
+use std::{borrow::Cow, env, sync::Arc, time::SystemTime};
 
 use crate::{
     embedbuilder::{build_embeds, split_file},
     messages::{
-        EmbedContent,
-        ProtoFile,
-        Request,
-        Response,
+        EmbedContent, ProtoFile, Request, Response,
         request::Message::{Command, File},
         response::Field,
     },
@@ -141,7 +134,11 @@ impl Server {
             .await;
     }
 
-    async fn update_presence(&self, ctx: Arc<Context>, num_servers: usize) {
+    async fn update_presence(
+        &self,
+        ctx: Arc<poise::serenity_prelude::client::Context>,
+        num_servers: usize,
+    ) {
         let mut last_update = self.last_presense_update.lock().await;
         let now = SystemTime::now();
         if now.duration_since(*last_update).unwrap().as_secs() < 60 {
@@ -166,7 +163,7 @@ impl Server {
         &self,
         mut stream: TcpStream,
         settings: Arc<DiscordSettings>,
-        ctx: Arc<Context>,
+        ctx: Arc<poise::serenity_prelude::client::Context>,
     ) -> eyre::Result<()> {
         loop {
             let length_buf = &mut [0u8; 4];
@@ -188,10 +185,12 @@ impl Server {
         &self,
         settings: Arc<DiscordSettings>,
         response: Response,
-        ctx: Arc<Context>,
+        ctx: Arc<poise::serenity_prelude::client::Context>,
     ) -> eyre::Result<()> {
         settings.num_messages.fetch_add(1, Ordering::Relaxed);
-        settings.total_data.fetch_add(response.encoded_len(), Ordering::Relaxed);
+        settings
+            .total_data
+            .fetch_add(response.encoded_len(), Ordering::Relaxed);
         match response.field {
             None => Ok(()),
             Some(Field::File(protofile)) => {
@@ -275,8 +274,12 @@ impl Server {
             Some(Field::Settings(new_settings)) => {
                 *settings.channel.write().await = ChannelId::from(new_settings.channel_id);
                 *settings.prefix.lock().await = new_settings.command_prefix;
-                settings.cycle_time.store(new_settings.cycle_time, Ordering::Relaxed);
-                settings.enabled.store(new_settings.presence_enabled, Ordering::Relaxed);
+                settings
+                    .cycle_time
+                    .store(new_settings.cycle_time, Ordering::Relaxed);
+                settings
+                    .enabled
+                    .store(new_settings.presence_enabled, Ordering::Relaxed);
                 Ok(())
             }
         }
@@ -346,7 +349,11 @@ impl Server {
         self._send_data(channel, data).await
     }
 
-    pub async fn send_stats(&self, channel: ChannelId, ctx: Context) {
+    pub async fn send_stats(
+        &self,
+        channel: ChannelId,
+        ctx: poise::serenity_prelude::client::Context,
+    ) {
         let mut wtr = Writer::from_writer(vec![]);
         let c = self.clients.lock().await;
         for client in c.as_slice() {
