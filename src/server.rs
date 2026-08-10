@@ -150,11 +150,13 @@ impl Server {
 
         let cloud = env::var("CLOUD_SERVER");
         if cloud.is_ok() {
-            let presence = format!("to {num_servers} instances");
-            ctx.set_presence(
-                Some(ActivityData::streaming(presence, "https://octoprint.org").unwrap()),
-                OnlineStatus::Online,
-            );
+            // let presence = format!("to {num_servers} instances");
+            // ctx.set_presence(
+            //     Some(ActivityData::streaming(presence, "https://octoprint.org").unwrap()),
+            //     OnlineStatus::Online,
+            // );
+            ctx.set_presence(Some(ActivityData::streaming("Important info: https://github.com/cameroncros/OctoPrint-DiscordRemote/issues/264",
+                                                          "https://github.com/cameroncros/OctoPrint-DiscordRemote/issues/264").unwrap()), OnlineStatus::DoNotDisturb);
         }
 
         *last_update = now;
