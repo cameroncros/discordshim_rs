@@ -32,6 +32,7 @@ dev_deploy:
     - |
       cat <<EOT >> .env
       BOT_TOKEN='$TEST_BOT_TOKEN'
+      HEALTH_CHECK_TOKEN='$TEST_BOT_TOKEN'
       EXTERNAL_PORT=53416
       IMAGE_TAG=dev
       EOT
@@ -62,6 +63,7 @@ live_deploy:
     - |
       cat <<EOT >> .env
       BOT_TOKEN='$LIVE_BOT_TOKEN'
+      HEALTH_CHECK_TOKEN='$TEST_BOT_TOKEN'
       EXTERNAL_PORT=23416
       IMAGE_TAG=latest
       EOT

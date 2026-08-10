@@ -5,7 +5,7 @@ use color_eyre::eyre;
 use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::{ChannelId, FullEvent};
 use std::env;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub struct Data {
     pub healthcheckchannel: ChannelId,
@@ -13,15 +13,18 @@ pub struct Data {
 }
 pub(crate) type Context<'a> = poise::Context<'a, Data, eyre::Error>;
 
+static SERVER_LOCK: OnceLock<bool> = OnceLock::new();
+
 async fn run_server(ctx: Arc<poise::serenity_prelude::Context>, server: Arc<RwLock<Server>>) {
-    server.read().await.run(ctx).await;
+    SERVER_LOCK.get_or_init(|| {
+        tokio::spawn(async move { server.read().await.run(ctx).await });
+        true
+    });
 }
 
 pub async fn serve() -> eyre::Result<()> {
     let server = Arc::new(RwLock::new(Server::new()));
     let ctx_server = server.clone();
-
-    let intents = serenity::GatewayIntents::non_privileged();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![
@@ -70,6 +73,11 @@ pub async fn serve() -> eyre::Result<()> {
         })
         .build();
     let token = env::var("DISCORD_TOKEN").expect("token");
+
+    let intents = serenity::GatewayIntents::privileged()
+        | serenity::GatewayIntents::GUILD_MESSAGES
+        | serenity::GatewayIntents::DIRECT_MESSAGES
+        | serenity::GatewayIntents::MESSAGE_CONTENT;
     let mut client = serenity::ClientBuilder::new(token, intents)
         .framework(framework)
         .await?;
@@ -84,73 +92,49 @@ pub(crate) async fn event_handler(
     event: &FullEvent,
     data: &Data,
 ) -> eyre::Result<()> {
-    if let FullEvent::Ready {
-        data_about_bot: _data_about_bot,
-    } = event
-    {
-        let context = Arc::new(ctx.clone());
-        tokio::spawn(run_server(context, data.server.clone()));
-    } else if let FullEvent::Message { new_message } = event {
-        if new_message.channel_id == data.healthcheckchannel && new_message.content == "/stats" {
-            data.server
-                .read()
-                .await
-                .send_stats(new_message.channel_id, ctx.clone())
-                .await;
+    match event {
+        FullEvent::Ready {
+            data_about_bot: _data_about_bot,
+        } => {
+            let context = Arc::new(ctx.clone());
+            tokio::spawn(run_server(context, data.server.clone()));
         }
-
-        // Check for health check message.
-        if new_message.author == **ctx.cache.current_user() {
-            // Message is from ourselves.
-            if new_message.channel_id == data.healthcheckchannel {
-                if new_message.embeds.len() != 1 {
-                    return Ok(());
-                }
-                let embed1 = new_message.embeds.first().unwrap();
-                if embed1.title.is_none() {
-                    return Ok(());
-                }
-                let flag = embed1.title.as_ref().unwrap().clone();
-                let _ = data
-                    .server
+        FullEvent::Message { new_message } => {
+            if new_message.guild_id.is_none() && new_message.content == "/stats" {
+                data.server
                     .read()
                     .await
-                    .send_command(new_message.channel_id, new_message.author.id, flag)
+                    .send_stats(new_message.channel_id, ctx.clone())
                     .await;
-                return Ok(());
             }
-            return Ok(());
-        }
 
-        if new_message.guild_id.is_none() {
-            // is_private()
-            return Ok(());
-        }
-        // Process all other messages as normal.
-        let _ = data
-            .server
-            .read()
-            .await
-            .send_command(
-                new_message.channel_id,
-                new_message.author.id,
-                new_message.content.clone(),
-            )
-            .await;
-        for attachment in &new_message.attachments {
-            let filedata = attachment.download().await?;
+            // Process all other messages as normal.
             let _ = data
                 .server
                 .read()
                 .await
-                .send_file(
+                .send_command(
                     new_message.channel_id,
                     new_message.author.id,
-                    attachment.filename.clone(),
-                    filedata,
+                    new_message.content.clone(),
                 )
                 .await;
+            for attachment in &new_message.attachments {
+                let filedata = attachment.download().await?;
+                let _ = data
+                    .server
+                    .read()
+                    .await
+                    .send_file(
+                        new_message.channel_id,
+                        new_message.author.id,
+                        attachment.filename.clone(),
+                        filedata,
+                    )
+                    .await;
+            }
         }
+        _ => {}
     }
     Ok(())
 }
