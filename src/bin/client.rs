@@ -55,7 +55,7 @@ async fn receiver(client: &mut ReadHalf<'_>) -> eyre::Result<()> {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let mut client = TcpStream::connect("192.168.1.100:53416").await?;
+    let mut client = TcpStream::connect("opdrshim.uk:23416").await?;
     let (mut recv, mut send) = client.split();
 
     let handshake = Response {
