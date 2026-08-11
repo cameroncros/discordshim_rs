@@ -110,6 +110,11 @@ pub(crate) async fn event_handler(
                 return Ok(());
             }
 
+            // Skip messages from self.
+            if new_message.author == **ctx.cache.current_user() {
+                return Ok(());
+            }
+            // Skip empty messages.
             if new_message.content.is_empty() {
                 return Ok(());
             }
