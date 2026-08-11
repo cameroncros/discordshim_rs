@@ -99,14 +99,8 @@ pub(crate) async fn event_handler(
             tokio::spawn(run_server(context, data.server.clone()));
         }
         FullEvent::Message { new_message } => {
+            // Skip DMs
             if new_message.guild_id.is_none() {
-                // if new_message.content == "/stats" {
-                //     data.server
-                //         .read()
-                //         .await
-                //         .send_stats(new_message.channel_id, ctx.clone())
-                //         .await;
-                // }
                 return Ok(());
             }
 
