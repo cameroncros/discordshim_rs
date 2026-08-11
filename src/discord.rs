@@ -75,6 +75,7 @@ pub async fn serve() -> eyre::Result<()> {
     let token = env::var("DISCORD_TOKEN").expect("token");
 
     let intents = serenity::GatewayIntents::non_privileged()
+        | serenity::GatewayIntents::MESSAGE_CONTENT
         | serenity::GatewayIntents::DIRECT_MESSAGES;
     let mut client = serenity::ClientBuilder::new(token, intents)
         .framework(framework)
