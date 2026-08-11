@@ -98,13 +98,13 @@ pub(crate) async fn event_handler(
             tokio::spawn(run_server(context, data.server.clone()));
         }
         FullEvent::Message { new_message } => {
-            if new_message.guild_id.is_none() && new_message.content == "/stats" {
-                data.server
-                    .read()
-                    .await
-                    .send_stats(new_message.channel_id, ctx.clone())
-                    .await;
-            }
+            // if new_message.guild_id.is_none() && new_message.content == "/stats" {
+            //     data.server
+            //         .read()
+            //         .await
+            //         .send_stats(new_message.channel_id, ctx.clone())
+            //         .await;
+            // }
 
             // Process all other messages as normal.
             let _ = data
