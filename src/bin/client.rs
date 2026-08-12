@@ -1,13 +1,26 @@
 use byteorder::{ByteOrder, LittleEndian};
 use color_eyre::eyre;
 use discordshim::messages::response::Field;
-use discordshim::messages::{Request, Response, Settings};
+use discordshim::messages::{EmbedContent, Request, Response, Settings};
 use log::debug;
 use prost::Message;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{ReadHalf, WriteHalf};
-use tokio::task::yield_now;
+use discordshim::messages::response::Field::Embed;
+
+use clap::Parser;
+use clap_derive::Parser;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long, default_value = "467700763775205396")]
+    channel_id: u64,
+    #[arg(long, default_value = "opdrshim.uk")]
+    address: String,
+    #[arg(long, default_value = "23416")]
+    port: u16,
+}
 
 async fn send_msg(client: &mut WriteHalf<'_>, message: Response) -> eyre::Result<()> {
     let message_bytes = message.encode_to_vec();
@@ -34,9 +47,34 @@ async fn recv_msg(client: &mut ReadHalf<'_>) -> eyre::Result<Request> {
     Ok(Request::decode(buf.as_slice())?)
 }
 
-async fn sender(_client: &mut WriteHalf<'_>) -> eyre::Result<()> {
+async fn sender(client: &mut WriteHalf<'_>) -> eyre::Result<()> {
+    let mut stdin = BufReader::new(tokio::io::stdin());
+    let mut input = String::new();
+
     loop {
-        yield_now().await
+        stdin.read_line(&mut input).await.expect("Failed to read from STDIN");
+        let text = input.trim().to_string();
+        if text.is_empty() {
+            input.clear();
+            continue;
+        }
+
+        let embed_content = EmbedContent {
+            title: "".to_string(),
+            description: text,
+            author: "".to_string(),
+            color: 0,
+            snapshot: None,
+            textfield: vec![],
+        };
+
+        let response = Response {
+            field: Some(Embed(embed_content)),
+        };
+
+        send_msg(client, response).await?;
+
+        input.clear();
     }
 }
 
@@ -53,27 +91,26 @@ async fn receiver(client: &mut ReadHalf<'_>) -> eyre::Result<()> {
     }
 }
 
-#[tokio::main]
+#[tokio::main(worker_threads = 2)]
 async fn main() -> eyre::Result<()> {
-    let mut client = TcpStream::connect("opdrshim.uk:23416").await?;
+    let args = Args::parse();
+    let mut client = TcpStream::connect(format!("{}:{}", args.address, args.port)).await?;
     let (mut recv, mut send) = client.split();
 
     let handshake = Response {
         field: Some(Field::Settings(Settings {
-            channel_id: 467700763775205396,
+            channel_id: args.channel_id,
             presence_enabled: false,
             cycle_time: 0,
-            command_prefix: "!".to_string(),
+            command_prefix: "DOESNT MATTER".to_string(),
         })),
     };
     send_msg(&mut send, handshake).await?;
 
-    receiver(&mut recv).await?;
-
-    // tokio::select!(
-    //     _ = sender(&mut send) => {},
-    //     _ = receiver(&mut recv) => {},
-    // );
+    tokio::select! {
+        _ = sender(&mut send) => {},
+        _ = receiver(&mut recv) => {},
+    };
 
     Ok(())
 }
