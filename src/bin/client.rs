@@ -1,12 +1,12 @@
 use byteorder::{ByteOrder, LittleEndian};
 use color_eyre::eyre;
 use discordshim::messages::response::Field;
+use discordshim::messages::response::Field::Embed;
 use discordshim::messages::{EmbedContent, Request, Response, Settings};
 use log::debug;
 use prost::Message;
 use tokio::net::TcpStream;
 use tokio::net::tcp::{ReadHalf, WriteHalf};
-use discordshim::messages::response::Field::Embed;
 
 use clap::Parser;
 use clap_derive::Parser;
@@ -52,7 +52,10 @@ async fn sender(client: &mut WriteHalf<'_>) -> eyre::Result<()> {
     let mut input = String::new();
 
     loop {
-        stdin.read_line(&mut input).await.expect("Failed to read from STDIN");
+        stdin
+            .read_line(&mut input)
+            .await
+            .expect("Failed to read from STDIN");
         let text = input.trim().to_string();
         if text.is_empty() {
             input.clear();

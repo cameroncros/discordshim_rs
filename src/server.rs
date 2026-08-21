@@ -134,11 +134,7 @@ impl Server {
             .await;
     }
 
-    async fn update_presence(
-        &self,
-        ctx: Arc<poise::serenity_prelude::client::Context>,
-        num_servers: usize,
-    ) {
+    async fn update_presence(&self, ctx: Arc<Context>, num_servers: usize) {
         let mut last_update = self.last_presense_update.lock().await;
         let now = SystemTime::now();
         if now.duration_since(*last_update).unwrap().as_secs() < 60 {
@@ -147,13 +143,13 @@ impl Server {
 
         let cloud = env::var("CLOUD_SERVER");
         if cloud.is_ok() {
-            // let presence = format!("to {num_servers} instances");
-            // ctx.set_presence(
-            //     Some(ActivityData::streaming(presence, "https://octoprint.org").unwrap()),
-            //     OnlineStatus::Online,
-            // );
-            ctx.set_presence(Some(ActivityData::streaming("Important info: https://github.com/cameroncros/OctoPrint-DiscordRemote/issues/264",
-                                                          "https://github.com/cameroncros/OctoPrint-DiscordRemote/issues/264").unwrap()), OnlineStatus::DoNotDisturb);
+            let presence = format!("to {num_servers} instances");
+            ctx.set_presence(
+                Some(ActivityData::streaming(presence, "https://octoprint.org").unwrap()),
+                OnlineStatus::Online,
+            );
+            // ctx.set_presence(Some(ActivityData::streaming("Important info: https://github.com/cameroncros/OctoPrint-DiscordRemote/issues/264",
+            //                                             "https://github.com/cameroncros/OctoPrint-DiscordRemote/issues/264").unwrap()), OnlineStatus::DoNotDisturb);
         }
 
         *last_update = now;
