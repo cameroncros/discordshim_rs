@@ -99,7 +99,14 @@ impl Server {
                         Ok(s) => s,
                     };
 
-                    let peer_addr = stream.peer_addr().unwrap();
+
+                    let peer_addr = match stream.peer_addr() {
+                        Ok(peer_addr) => peer_addr,
+                        Err(e) => {
+                            error!("Failed to get peer addr: {:?}", e);
+                            return;
+                        }
+                    };
                     info!("Received connection from: {}", peer_addr);
 
                     let settings = Arc::new(DiscordSettings {
