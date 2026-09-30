@@ -12,14 +12,14 @@ stages:
 
 test:
   stage: test
-  image: rust:bullseye
+  image: rust:trixie
   script:
     - apt update && apt install -y cmake protobuf-compiler
     - cargo test
 
 lint:
   stage: test
-  image: rust:bullseye
+  image: rust:trixie
   script:
     - apt update && apt install -y cmake protobuf-compiler
     - rustup component add clippy
