@@ -6,23 +6,23 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-poise = { version = "0.6.2" }
-tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "io-std"] }
+poise = { version = "0.7.1" }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "io-std"] }
 futures = "0.3"
 byteorder = "1.5.0"
-zip = "6.0.0"
-prost = "0.14.1"
-log = "0.4.28"
+zip = "9.1.3"
+prost = "0.14.4"
+log = "0.4.34"
 pretty_env_logger = "0.5.0"
 regex = "1.12.2"
 csv = "1.4.0"
 serde = "1.0.228"
 console-subscriber = "0.5.0"
 async-std = { version = "1.13", features = ["attributes"] }
-uuid = { version = "1.18.1", features = [ "v4",  "fast-rng" ] }
+uuid = { version = "1.29.0", features = [ "v4",  "fast-rng" ] }
 color-eyre = "0.6.5"
-clap = "4.6.4"
-clap_derive = "4.6.4"
+clap = "4.6.7"
+clap_derive = "4.6.7"
 
 [build-dependencies]
-prost-build = "0.14.1"
+prost-build = "0.14.4"

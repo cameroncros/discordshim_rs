@@ -94,8 +94,8 @@ async fn receiver(flag: String) -> eyre::Result<()> {
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            event_handler: |_ctx, event, _framework, data| {
-                Box::pin(async move { event_handler(event, data).await })
+            event_handler: |ctx, event| {
+                Box::pin(async move { event_handler(event, ctx.user_data).await })
             },
             ..Default::default()
         })

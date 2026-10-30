@@ -1,8 +1,8 @@
 use crate::commands::*;
 use crate::server::Server;
 use async_std::sync::RwLock;
-use color_eyre::eyre;
-use poise::serenity_prelude as serenity;
+use color_eyre::{eyre, Report};
+use poise::{serenity_prelude as serenity, FrameworkContext};
 use poise::serenity_prelude::{ChannelId, FullEvent};
 use std::env;
 use std::sync::{Arc, OnceLock};
@@ -15,7 +15,7 @@ pub(crate) type Context<'a> = poise::Context<'a, Data, eyre::Error>;
 
 static SERVER_LOCK: OnceLock<bool> = OnceLock::new();
 
-async fn run_server(ctx: Arc<poise::serenity_prelude::Context>, server: Arc<RwLock<Server>>) {
+async fn run_server(ctx: serenity::Context, server: Arc<RwLock<Server>>) {
     SERVER_LOCK.get_or_init(|| {
         tokio::spawn(async move { server.read().await.run(ctx).await });
         true
@@ -51,8 +51,8 @@ pub async fn serve() -> eyre::Result<()> {
                 listsystemcommands(),
                 systemcommand(),
             ],
-            event_handler: |ctx, event, _framework, data| {
-                Box::pin(async move { event_handler(ctx, event, data).await })
+            event_handler: |ctx, event| {
+                Box::pin(async move { event_handler(ctx, event, ctx.user_data).await })
             },
             ..Default::default()
         })
@@ -85,16 +85,16 @@ pub async fn serve() -> eyre::Result<()> {
     Ok(())
 }
 
-pub(crate) async fn event_handler(
-    ctx: &serenity::Context,
-    event: &FullEvent,
-    data: &Data,
+pub(crate) async fn event_handler<'a>(
+    ctx: FrameworkContext<'a, Data, Report>,
+    event: &'a FullEvent,
+    data: &'a Data,
 ) -> eyre::Result<()> {
     match event {
         FullEvent::Ready {
             data_about_bot: _data_about_bot,
         } => {
-            let context = Arc::new(ctx.clone());
+            let context = ctx.serenity_context.clone();
             tokio::spawn(run_server(context, data.server.clone()));
         }
         FullEvent::Message { new_message } => {
@@ -104,7 +104,7 @@ pub(crate) async fn event_handler(
             }
 
             // Skip messages from self.
-            if new_message.author == **ctx.cache.current_user() {
+            if new_message.author == **ctx.serenity_context.cache.current_user() {
                 return Ok(());
             }
             // Skip empty messages.

@@ -16,7 +16,7 @@ use prost::Message;
 use regex::Regex;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
 use std::{borrow::Cow, env, sync::Arc, time::SystemTime};
-
+use color_eyre::eyre::bail;
 use crate::{
     embedbuilder::{build_embeds, split_file},
     messages::{
@@ -80,7 +80,7 @@ impl Server {
         }
     }
 
-    pub async fn run(&self, ctx: Arc<Context>) {
+    pub async fn run(&self, ctx: Context) {
         debug!("Starting TCP listener");
         let listener = TcpListener::bind("0.0.0.0:23416")
             .await
@@ -141,7 +141,7 @@ impl Server {
             .await;
     }
 
-    async fn update_presence(&self, ctx: Arc<Context>, num_servers: usize) {
+    async fn update_presence(&self, ctx: Context, num_servers: usize) {
         let mut last_update = self.last_presense_update.lock().await;
         let now = SystemTime::now();
         if now.duration_since(*last_update).unwrap().as_secs() < 60 {
@@ -166,7 +166,7 @@ impl Server {
         &self,
         mut stream: TcpStream,
         settings: Arc<DiscordSettings>,
-        ctx: Arc<poise::serenity_prelude::client::Context>,
+        ctx: Context,
     ) -> eyre::Result<()> {
         loop {
             let length_buf = &mut [0u8; 4];
@@ -188,7 +188,7 @@ impl Server {
         &self,
         settings: Arc<DiscordSettings>,
         response: Response,
-        ctx: Arc<poise::serenity_prelude::client::Context>,
+        ctx: Context,
     ) -> eyre::Result<()> {
         settings.num_messages.fetch_add(1, Ordering::Relaxed);
         settings
@@ -269,12 +269,15 @@ impl Server {
                 let cloud = env::var("CLOUD_SERVER");
                 if cloud.is_err() {
                     let activity = ActivityData::playing(presence.presence);
-                    ctx.shard.set_presence(Some(activity), OnlineStatus::Online);
+                    ctx.set_presence(Some(activity), OnlineStatus::Online);
                 }
                 Ok(())
             }
 
             Some(Field::Settings(new_settings)) => {
+                if new_settings.channel_id == 0 {
+                    bail!("ChannelID cant be zero.")
+                }
                 *settings.channel.write().await = ChannelId::from(new_settings.channel_id);
                 *settings.prefix.lock().await = new_settings.command_prefix;
                 settings
