@@ -8,7 +8,9 @@
 stages:
 - test
 - dev
+- dev_test
 - live
+- live_test
 
 test:
   stage: test
@@ -40,11 +42,11 @@ dev_deploy:
     - COMPOSE_PROJECT_NAME=dev_discordshim docker compose up --build -d
 
 test_dev_deploy:
-  stage: dev
+  stage: dev_test
   image: python:alpine
   timeout: 10m
   retry: 2
-  dependencies:
+  needs:
     - dev_deploy
   script:
     - apk add protoc
@@ -55,7 +57,7 @@ live_deploy:
   tags: [prod]
   stage: live
   image: docker:latest
-  dependencies:
+  needs:
     - test_dev_deploy
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
@@ -72,11 +74,11 @@ live_deploy:
 
 test_live_deploy:
   tags: [prod]
-  stage: live
+  stage: live_test
   image: python:alpine
   timeout: 10m
   retry: 2
-  dependencies:
+  needs:
     - live_deploy
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
